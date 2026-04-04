@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Celluloid – CS284A Final Project</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:   #003262;   /* Berkeley Blue */
+      --gold:   #FDB515;   /* California Gold */
+      --light:  #f5f7fa;
+      --white:  #ffffff;
+      --text:   #1a1a2e;
+      --muted:  #5a5a72;
+      --border: #dde1e9;
+      --radius: 8px;
+      --max-w:  900px;
+    }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--light);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    /* ── Header / Hero ─────────────────────────────────────────── */
+    header {
+      background: linear-gradient(135deg, var(--blue) 0%, #004a8f 100%);
+      color: var(--white);
+      text-align: center;
+      padding: 3.5rem 1.5rem 2.5rem;
+    }
+
+    header .course-tag {
+      display: inline-block;
+      background: var(--gold);
+      color: var(--blue);
+      font-weight: 700;
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.85rem;
+      border-radius: 999px;
+      margin-bottom: 1.2rem;
+    }
+
+    header h1 {
+      font-size: clamp(2.2rem, 6vw, 3.4rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    header .subtitle {
+      font-size: 1.1rem;
+      opacity: 0.85;
+      margin-bottom: 1.6rem;
+    }
+
+    .team-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem 1.2rem;
+      margin-top: 0.5rem;
+    }
+
+    .team-grid .member {
+      font-size: 0.95rem;
+      opacity: 0.9;
+    }
+
+    .team-grid .member a {
+      color: var(--gold);
+      text-decoration: none;
+    }
+
+    .team-grid .member a:hover { text-decoration: underline; }
+
+    /* ── Navigation ────────────────────────────────────────────── */
+    nav {
+      background: var(--white);
+      border-bottom: 2px solid var(--gold);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    nav ul {
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0;
+      max-width: var(--max-w);
+      margin: 0 auto;
+    }
+
+    nav ul li a {
+      display: block;
+      padding: 0.85rem 1.2rem;
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    nav ul li a:hover {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    /* ── Main content ───────────────────────────────────────────── */
+    main {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    section {
+      margin-bottom: 3rem;
+    }
+
+    section:last-child { margin-bottom: 0; }
+
+    h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--blue);
+      padding-bottom: 0.4rem;
+      border-bottom: 3px solid var(--gold);
+      margin-bottom: 1.2rem;
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--blue);
+      margin: 1.4rem 0 0.5rem;
+    }
+
+    p { margin-bottom: 0.9rem; }
+    p:last-child { margin-bottom: 0; }
+
+    ul, ol {
+      padding-left: 1.5rem;
+      margin-bottom: 0.9rem;
+    }
+
+    li { margin-bottom: 0.3rem; }
+
+    /* ── Cards ──────────────────────────────────────────────────── */
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.4rem 1.6rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    /* ── Image placeholders / figure ───────────────────────────── */
+    figure {
+      text-align: center;
+      margin: 1.5rem 0;
+    }
+
+    figure img {
+      max-width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    figcaption {
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+
+    .img-placeholder {
+      width: 100%;
+      min-height: 220px;
+      background: #e8edf5;
+      border-radius: var(--radius);
+      border: 2px dashed var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    /* ── Image row ──────────────────────────────────────────────── */
+    .img-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin: 1.2rem 0;
+    }
+
+    /* ── Deliverables table ─────────────────────────────────────── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin-top: 0.8rem;
+    }
+
+    th {
+      background: var(--blue);
+      color: var(--white);
+      padding: 0.6rem 1rem;
+      text-align: left;
+    }
+
+    td {
+      padding: 0.55rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tr:nth-child(even) td { background: #f0f3f8; }
+
+    /* ── References ─────────────────────────────────────────────── */
+    .ref-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .ref-list li {
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.92rem;
+    }
+
+    .ref-list li:last-child { border-bottom: none; }
+
+    .ref-list a { color: var(--blue); }
+    .ref-list a:hover { color: #004a8f; }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      background: var(--white);
+    }
+
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<!-- ╔══════════════════════════════════════════════════════════════╗ -->
+<!-- ║                         HEADER                              ║ -->
+<!-- ╚══════════════════════════════════════════════════════════════╝ -->
+<header>
+  <span class="course-tag">CS284A · Spring 2026 · UC Berkeley</span>
+  <h1>Celluloid</h1>
+  <p class="subtitle">Real-Time Animation Rendering with Procedural Motion</p>
+  <div class="team-grid">
+    <span class="member">Team Member 1</span>
+    <span class="member">·</span>
+    <span class="member">Team Member 2</span>
+    <span class="member">·</span>
+    <span class="member">Team Member 3</span>
+    <span class="member">·</span>
+    <span class="member">Team Member 4</span>
+  </div>
+</header>
+
+<!-- ╔══════════════════════════════════════════════════════════════╗ -->
+<!-- ║                       NAVIGATION                            ║ -->
+<!-- ╚══════════════════════════════════════════════════════════════╝ -->
+<nav>
+  <ul>
+    <li><a href="#abstract">Abstract</a></li>
+    <li><a href="#technical">Technical Approach</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#contributions">Contributions</a></li>
+    <li><a href="#references">References</a></li>
+  </ul>
+</nav>
+
+<!-- ╔══════════════════════════════════════════════════════════════╗ -->
+<!-- ║                        MAIN CONTENT                         ║ -->
+<!-- ╚══════════════════════════════════════════════════════════════╝ -->
+<main>
+
+  <!-- ── Abstract ──────────────────────────────────────────────── -->
+  <section id="abstract">
+    <h2>Abstract</h2>
+    <div class="card">
+      <p>
+        <strong>Celluloid</strong> is a real-time rendering system inspired by the hand-drawn, cel-shaded
+        aesthetic of classic animation. Traditional cel animation is characterized by flat color fills,
+        bold outlines, and deliberate motion curves — a style that is costly to produce manually but can
+        be approximated computationally using modern graphics techniques.
+      </p>
+      <p>
+        Our system combines <em>non-photorealistic rendering (NPR)</em> with procedural motion synthesis
+        to generate expressive, stylized animations in real time. Key contributions include an adaptive
+        silhouette-edge detection pass, a palette-quantized Phong shading model, and a procedural
+        in-betweening system driven by physically informed spring dynamics.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Technical Approach ────────────────────────────────────── -->
+  <section id="technical">
+    <h2>Technical Approach</h2>
+
+    <h3>1. Cel-Shading Pipeline</h3>
+    <p>
+      We implement a multi-pass OpenGL rendering pipeline that discretizes the continuous Phong shading
+      model into a small number of color bands, producing the characteristic "stepped" illumination of
+      cel animation. A configurable ramp texture maps the Lambertian dot product to user-defined toon
+      bands (typically 2–4 levels), allowing artistic control over light-dark transitions.
+    </p>
+    <div class="img-row">
+      <figure>
+        <div class="img-placeholder">Phong vs. Toon shading comparison</div>
+        <figcaption>Fig. 1 – Standard Phong (left) vs. toon-shaded output (right).</figcaption>
+      </figure>
+      <figure>
+        <div class="img-placeholder">Ramp texture editor UI</div>
+        <figcaption>Fig. 2 – Interactive ramp texture editor.</figcaption>
+      </figure>
+    </div>
+
+    <h3>2. Silhouette &amp; Edge Detection</h3>
+    <p>
+      Bold outlines are central to the cel aesthetic. We detect silhouette edges geometrically during
+      the vertex shader pass by comparing each triangle's face normal with the view direction and
+      expanding back-facing geometry slightly along its normal to create an outline "shell."
+      An additional screen-space Sobel filter on the depth buffer captures inner creases and fine detail
+      edges that the geometric pass misses.
+    </p>
+    <div class="card">
+      <strong>Edge weight formula:</strong>
+      <pre style="margin-top:0.5rem; font-size:0.88rem; overflow-x:auto;">
+  w = α · depth_edge + β · normal_edge
+  outline_width = base_width × (1 + γ / depth)
+      </pre>
+      <p style="margin-top:0.5rem; font-size:0.9rem; color:var(--muted);">
+        α, β, γ are artist-tunable parameters; depth normalization keeps outlines consistent
+        across object distances.
+      </p>
+    </div>
+
+    <h3>3. Procedural In-Betweening with Spring Dynamics</h3>
+    <p>
+      Classical animation relies on <em>in-betweening</em> — interpolating frames between key poses.
+      We drive this interpolation with a second-order spring system, giving animators direct control
+      over stiffness, damping, and over-shoot to produce squash-and-stretch effects automatically.
+      The spring state is integrated with a semi-implicit Euler step at 60 Hz, keeping the simulation
+      stable even under large time steps.
+    </p>
+    <ul>
+      <li><strong>Stiffness k</strong> – how quickly the character snaps to a new pose.</li>
+      <li><strong>Damping c</strong> – how much oscillation is suppressed.</li>
+      <li><strong>Mass m</strong> – effective inertia of each bone chain.</li>
+    </ul>
+
+    <h3>4. Palette Quantization &amp; Color Style Transfer</h3>
+    <p>
+      To enforce a hand-crafted color palette, we apply k-means quantization in CIELAB color space
+      at a post-processing stage. Users specify a target palette (or sample one from a reference image),
+      and each output pixel is mapped to its nearest palette entry using a GPU-accelerated nearest-neighbor
+      lookup in a 3-D LUT.
+    </p>
+
+    <h3>Problems Encountered</h3>
+    <div class="card">
+      <ul>
+        <li>
+          <strong>Silhouette popping:</strong> The geometric outline shell caused visible discontinuities
+          at mesh seams. We addressed this by welding vertices with identical positions before the
+          expansion pass.
+        </li>
+        <li>
+          <strong>Spring instability at low frame rates:</strong> Large Δt values caused the semi-implicit
+          integrator to diverge. We clamped Δt to 1/30 s and sub-stepped when necessary.
+        </li>
+        <li>
+          <strong>Palette banding artifacts:</strong> Hard k-means boundaries produced harsh color transitions.
+          Adding a small dithering pass (ordered Bayer matrix) smoothed the result without sacrificing the
+          stylized look.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ── Results ───────────────────────────────────────────────── -->
+  <section id="results">
+    <h2>Results</h2>
+
+    <p>
+      Our system achieves real-time performance (&gt;60 fps) on a mid-range GPU (NVIDIA GTX 1070)
+      for scenes with up to ~50 000 triangles and 10 animated characters simultaneously. Below are
+      representative outputs produced by the Celluloid renderer.
+    </p>
+
+    <div class="img-row">
+      <figure>
+        <div class="img-placeholder">Animation frame – walk cycle</div>
+        <figcaption>Fig. 3 – Walk cycle rendered with 3-band toon shading.</figcaption>
+      </figure>
+      <figure>
+        <div class="img-placeholder">Animation frame – crowd scene</div>
+        <figcaption>Fig. 4 – 10-character crowd scene at 60 fps.</figcaption>
+      </figure>
+      <figure>
+        <div class="img-placeholder">Color palette comparison</div>
+        <figcaption>Fig. 5 – Default vs. custom palette quantization.</figcaption>
+      </figure>
+    </div>
+
+    <h3>Performance Summary</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Scene</th>
+          <th>Triangles</th>
+          <th>Characters</th>
+          <th>Avg. FPS</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Single character</td>    <td>5 000</td>  <td>1</td>  <td>240</td></tr>
+        <tr><td>Crowd scene</td>         <td>50 000</td> <td>10</td> <td>62</td></tr>
+        <tr><td>Environment + chars</td> <td>120 000</td><td>5</td>  <td>48</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Video Demo</h3>
+    <div class="card">
+      <p>
+        A full video demonstration is available at:
+        <a href="https://youtu.be/placeholder" target="_blank" rel="noopener">https://youtu.be/placeholder</a>
+        (link will be updated upon submission).
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Contributions ─────────────────────────────────────────── -->
+  <section id="contributions">
+    <h2>Contributions</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Team Member</th>
+            <th>Contributions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Team Member 1</td>
+            <td>Cel-shading pipeline, ramp texture editor</td>
+          </tr>
+          <tr>
+            <td>Team Member 2</td>
+            <td>Silhouette &amp; edge detection, outline shaders</td>
+          </tr>
+          <tr>
+            <td>Team Member 3</td>
+            <td>Procedural spring-dynamics in-betweening system</td>
+          </tr>
+          <tr>
+            <td>Team Member 4</td>
+            <td>Palette quantization, color style transfer, final demo</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── References ────────────────────────────────────────────── -->
+  <section id="references">
+    <h2>References</h2>
+    <ul class="ref-list">
+      <li>
+        [1] Lake, A., Marshall, C., Harris, M., &amp; Blackstein, M. (2000).
+        <em>Stylized rendering techniques for scalable real-time 3D animation.</em>
+        NPAR 2000.
+      </li>
+      <li>
+        [2] Gooch, B., Gooch, A., Shirley, P., &amp; Cohen, E. (1998).
+        <em>A non-photorealistic lighting model for automatic technical illustration.</em>
+        SIGGRAPH 1998.
+        <a href="https://doi.org/10.1145/280814.280950" target="_blank" rel="noopener">
+          doi:10.1145/280814.280950
+        </a>
+      </li>
+      <li>
+        [3] Raskar, R., &amp; Cohen, M. (1999).
+        <em>Image precision silhouette edges.</em>
+        SI3D 1999.
+      </li>
+      <li>
+        [4] Nehab, D., Shilane, P., &amp; Rusinkiewicz, S. (2006).
+        <em>Stratified point sampling of 3D models.</em>
+        EGSR 2006.
+      </li>
+      <li>
+        [5] Cem Yuksel.
+        <em>A class of C² interpolating splines.</em>
+        ACM TOG 39(5), 2020.
+        <a href="https://doi.org/10.1145/3406100" target="_blank" rel="noopener">
+          doi:10.1145/3406100
+        </a>
+      </li>
+      <li>
+        [6] CS284A Course Notes – UC Berkeley, Spring 2026.
+        <a href="https://cs184.eecs.berkeley.edu" target="_blank" rel="noopener">
+          cs184.eecs.berkeley.edu
+        </a>
+      </li>
+    </ul>
+  </section>
+
+</main>
+
+<!-- ╔══════════════════════════════════════════════════════════════╗ -->
+<!-- ║                          FOOTER                             ║ -->
+<!-- ╚══════════════════════════════════════════════════════════════╝ -->
+<footer>
+  <p>
+    CS284A Final Project · Spring 2026 ·
+    <a href="https://cs184.eecs.berkeley.edu" target="_blank" rel="noopener">UC Berkeley</a>
+    &nbsp;|&nbsp;
+    <a href="https://github.com/LupoSun/CS284A_Celluloid" target="_blank" rel="noopener">GitHub Repository</a>
+  </p>
+</footer>
+
+</body>
+</html>
