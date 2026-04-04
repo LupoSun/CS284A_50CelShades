@@ -1,2 +1,2 @@
-# CS284A_Celluloid
+# Fifty Shades of Cel
 Final project page for Spring2026 
