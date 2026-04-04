@@ -1,2 +1,2 @@
-# Fifty Shades of Cel
+# Fifty Shades of Celluloid
 Final project page for Spring2026 
