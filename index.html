@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Celluloid – CS284A Final Project</title>
+  <title>Building a Cel-Shading Pipeline for Stylized 3D Rendering – CS284A Proposal</title>
   <style>
     /* ── Reset & base ─────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -263,8 +263,8 @@
 <!-- ╚══════════════════════════════════════════════════════════════╝ -->
 <header>
   <span class="course-tag">CS284A · Spring 2026 · UC Berkeley</span>
-  <h1>Celluloid</h1>
-  <p class="subtitle">A Real-Time Non-Photorealistic Rendering Pipeline — Project Proposal</p>
+  <h1>Fifty Shades of Cel</h1>
+  <p class="subtitle">CS284A Final Project Proposal</p>
   <div class="team-grid">
     <span class="member">Kevin Frans</span>
     <span class="member">·</span>
@@ -286,7 +286,7 @@
     <li><a href="#goals">Goals &amp; Deliverables</a></li>
     <li><a href="#schedule">Schedule</a></li>
     <li><a href="#resources">Resources</a></li>
-    <li><a href="#contributions">Contributions</a></li>
+    <li hidden><a href="#contributions">Contributions</a></li>
   </ul>
 </nav>
 
@@ -300,11 +300,11 @@
     <h2>Summary</h2>
     <div class="card">
       <p>
-        <strong>Celluloid</strong> is a from-scratch cel-shading renderer that unifies three classically
-        separate stylization stages — silhouette extraction, quantized lighting, and stylized
-        texture/palette mapping — into a single interactive pipeline. Our goal is a configurable
-        real-time system that lets users dial in a hand-drawn look across dynamic scenes, with optional
-        procedural in-betweening to push the effect toward animated-film aesthetics.
+        Our project develops a stylized cel-shading pipeline that combines <strong>edge texture</strong>,
+        a <strong>cartoon-style shader</strong>, and <strong>texture mapping</strong> to create
+        expressive non-photorealistic 3D rendering. The project focuses on both visual quality and
+        efficiency, with the goal of supporting interactive scenes with multiple objects and light
+        sources.
       </p>
     </div>
   </section>
@@ -315,43 +315,45 @@
 
     <h3>Context</h3>
     <p>
-      Cel shading (or toon shading) is a non-photorealistic rendering style that makes 3D geometry
-      read as flat and hand-drawn. A convincing cel look typically depends on three components working
-      in concert: <strong>edge/outline rendering</strong> for silhouette clarity,
-      <strong>quantized shading</strong> for the characteristic flat light/shadow bands, and
-      <strong>texture/palette mapping</strong> for material identity and artistic tone. In practice these
-      are often treated as independent hacks bolted onto a standard shading pass, which makes the style
-      fragile under moving cameras, overlapping geometry, and multi-light scenes.
+      Cel shading (or toon shading) is a type of non-photorealistic rendering designed to make 3D
+      computer graphics appear to be flat and hand-drawn
+      (<a href="https://en.wikipedia.org/wiki/Cel_shading" target="_blank" rel="noopener">Wikipedia</a>).
+      The cel-shading effect includes three main components: <strong>edge texture</strong>,
+      <strong>shader</strong>, and <strong>texture mapping</strong>. The edge texture provides the
+      boundary of the geometries, the shader gives the flat-color effect, and texture mapping adds
+      vivid details to present the materials.
     </p>
 
     <h3>Problem</h3>
     <p>
-      We want to treat these three stages as one coherent pipeline and ask:
-      <em>what does it take to get a stable, real-time, configurable cel-shaded look on a non-trivial
-      scene?</em> The hard parts are (1) getting outlines that remain crisp and stable as geometry moves,
-      (2) designing a shader whose discretization of light direction actually reads as an art style
-      rather than as banding artifacts, and (3) keeping all of this fast enough for interactive camera
-      motion. A successful solution opens up low-cost stylized rendering for student games, shorts, and
-      prototyping — contexts where full hand-painted art is out of reach.
+      We are trying to combine the three main components of the pipeline together, and produce a
+      special rendering art style. This opens up more possibilities for game and movie production.
+      Moreover, we hope to explore how to speed up the process, since real-time rendering is important
+      for video games. Designing a shader that represents a certain art style is the most exciting —
+      and challenging — part, as it requires exploring how the direction of light reflection influences
+      the artistic style.
     </p>
 
-    <h3>General Approach</h3>
+    <h3>General Solution</h3>
     <ul>
       <li>
-        <strong>Edges:</strong> render expanded back-faces as a black silhouette behind normally shaded
-        front-faces, with screen-space normal/depth discontinuities as a fallback for interior creases.
+        <strong>Edge texture:</strong> One strategy is to create object outlines by rendering expanded
+        hidden back-faces as a black silhouette behind the normally shaded front-faces. We will
+        experiment with this solution to see whether it naturally composes over multiple objects, or
+        whether we will need a smarter way to handle z-buffering.
       </li>
       <li>
-        <strong>Shading:</strong> replace smooth Lambert/Blinn–Phong falloff with a 1D ramp texture
-        lookup, giving sharp light/mid/shadow bands whose thresholds and colors are user-editable.
+        <strong>Shader:</strong> We can stylize the rendered object by changing the model's normal
+        direction (one potential method is modifying its object-space normal map), and then use the
+        altered normals in shading to produce simplified, painterly lighting effects. An important
+        question is how to decide the quantization thresholds for when certain colors should be solid.
+        This is especially important when dealing with lighting, and we may need to treat the
+        light/shadow value as separate from the texture color itself.
       </li>
       <li>
-        <strong>Palette / texture:</strong> quantize material textures into a small palette and
-        composite them with the shading bands so texture detail survives the flattening.
-      </li>
-      <li>
-        <strong>Motion (stretch):</strong> a procedural spring-dynamics layer that adds
-        squash-and-stretch in-betweens to moving objects for a more animated feel.
+        <strong>Texture mapping:</strong> We can combine different texture maps (diffuse, opacity,
+        specular, glow, and reflection) with our shader to control different material properties while
+        keeping the stylized shading effect.
       </li>
     </ul>
   </section>
@@ -360,106 +362,80 @@
   <section id="goals">
     <h2>Goals &amp; Deliverables</h2>
 
-    <p>We will evaluate the system along three axes:</p>
+    <h3>How We Will Measure Quality and Performance</h3>
     <ul>
       <li>
-        <strong>Performance:</strong> a fixed set of reference scenes with increasing triangle counts
-        and light counts, measuring milliseconds per frame. Target: interactive (≥30 fps) on the
-        baseline scene on a personal laptop.
+        <strong>Performance:</strong> We will construct a set of reference scenes with increasing
+        numbers of objects and triangles, and measure the time to render a frame.
       </li>
       <li>
-        <strong>Visual quality:</strong> side-by-side comparisons against reference cel-shaded art and
-        against a standard Phong render of the same scene, judged by hand.
+        <strong>Visual quality:</strong> Mostly we will need to inspect these by hand.
       </li>
       <li>
-        <strong>Robustness:</strong> stress scenes with overlapping objects, concave geometry, and
-        multiple colored light sources. The renderer should remain artifact-free (no flickering
-        outlines, no broken bands) under camera motion.
+        <strong>Robustness:</strong> We will construct scenes with harder settings, such as objects
+        that overlap in multiple ways, or multiple light sources on the same object, and make sure
+        that the renderer remains correct even in these settings.
       </li>
     </ul>
 
-    <h3>What We Plan to Deliver (Baseline)</h3>
+    <h3>What We Plan to Deliver</h3>
     <div class="card">
       <ul>
         <li>
-          A from-scratch cel-shading renderer that handles multi-object, multi-light scenes with proper
-          silhouettes, hard-banded diffuse shading, and quantized palette textures.
-        </li>
-        <li>
-          A small gallery of rendered stills demonstrating the three pipeline stages independently and
-          composed.
-        </li>
-        <li>Performance and robustness measurements on our reference scenes.</li>
-      </ul>
-    </div>
-
-    <h3>What We Hope to Deliver (Aspirational)</h3>
-    <div class="card">
-      <ul>
-        <li>
-          Fully interactive viewer: live camera, moving objects, and raycast-based object
-          picking/dragging.
-        </li>
-        <li>
-          Runtime-configurable style knobs: number of color bands, edge width, palette size, outline
-          color.
-        </li>
-        <li>
-          Stylized shadow modes: crosshatch and dithered shadows as alternative ramp lookups.
-        </li>
-        <li>
-          Spring in-betweening extended to full scenes, producing animation-style squash/stretch on
-          camera cuts.
-        </li>
-        <li>
-          GPU parallelization of the shading and outline passes for real-time performance on denser
-          scenes.
+          A scene rendered with cel shading, implemented as a rendering pipeline built from scratch.
+          The scene can consist of multiple potentially overlapping objects and multiple light sources.
+          The cel-shaded output should have proper edge detection for each object, and instead of
+          blended colors it will have distinct solid colors, including the light and shadow regions.
         </li>
       </ul>
     </div>
 
-    <h3>Questions We Hope to Answer</h3>
-    <ul>
-      <li>
-        How much of the cel-shaded "feel" comes from outlines vs. quantized lighting vs. palette choice?
-      </li>
-      <li>
-        How does outline stability degrade as geometry becomes concave or self-occluding, and which
-        edge-detection strategy is most robust?
-      </li>
-      <li>
-        What is the per-pass cost budget of a real-time cel pipeline, and which stage is the bottleneck?
-      </li>
-    </ul>
+    <h3>What We Hope to Deliver</h3>
+    <div class="card">
+      <ul>
+        <li>
+          The scene can dynamically update as we move the camera around, or as objects in the scene
+          move. We may add a system that automatically generates a texture map or a mesh. We will
+          provide configurable settings to change the number of colors allowed, the edge width, and
+          similar parameters. We can add a camera raycast so the user can highlight or move objects
+          around. We can also implement stylized shadows (e.g. crosshatch shadows, dithered shadows).
+        </li>
+        <li>
+          Another bonus is performance: we can try to parallelize the raycasting and rendering and
+          get this to run on a modern GPU.
+        </li>
+      </ul>
+    </div>
   </section>
 
   <!-- ── Schedule ──────────────────────────────────────────────── -->
   <section id="schedule">
     <h2>Schedule</h2>
     <div class="card">
-      <h3>Week 1 — Foundations</h3>
+      <h3>Week 1 (April 6–12)</h3>
       <p>
-        Mesh loading, perspective camera, and a baseline forward renderer with solid shapes and naive
-        outlines. Reference scenes and measurement harness assembled.
+        Set up the project repository and the basic rendering pipeline. Read and interpret mesh files,
+        implement a perspective camera, and render solid shapes with outlines.
       </p>
 
-      <h3>Week 2 — Edges and Lights</h3>
+      <h3>Week 2 (April 13–19)</h3>
       <p>
-        Silhouette shader working on arbitrary meshes; basic lighting system with multiple lights
-        feeding the shading pass. Initial palette quantization on static textures.
+        Implement edge detection and a basic lighting system. Render a simple scene with cel-shading
+        outlines visible. Prepare milestone deliverables (report, video, slides).
       </p>
 
-      <h3>Week 3 — Flat Colors and Minimal Deliverable</h3>
+      <h3>Week 3 (April 20–26)</h3>
       <p>
-        Ramp-based hard-banded shading integrated with outlines and palette textures. By the end of
-        this week the baseline deliverable should render end-to-end, with edges hardened against the
-        harder test scenes and a single-object spring-dynamics demo landed.
+        Implement flat-color shading with hard color boundaries. Integrate edge detection, shader, and
+        texture mapping into a unified pipeline. Test on scenes with multiple overlapping objects and
+        run performance benchmarking across scenes of increasing complexity.
       </p>
 
-      <h3>Week 4 — Stretch Features and Polish</h3>
+      <h3>Week 4 (April 27 – May 3)</h3>
       <p>
-        Configurable style knobs, stylized shadows, camera/object interaction, and (if time) GPU
-        parallelization. Record final demo video and write up results.
+        Polish the renderer and add bonus features — more complex scenes, automatic texture map
+        creation, user-facing configurations, stylized shadows, and GPU parallelization. Prepare the
+        final deliverables (paper, webpage, video).
       </p>
     </div>
   </section>
@@ -470,65 +446,69 @@
     <div class="card">
       <h3>Computing &amp; Software</h3>
       <p>
-        Personal laptops and the class machines. We will write the code from scratch in C++/OpenGL
-        (with GLSL for shaders), using CS184 HW3 as a starting point for the renderer scaffolding.
+        For computing and hardware, we can develop this on personal computers or the class machines.
+        We will largely write the code from scratch, and use HW3 as a starting point for the renderer.
       </p>
 
-      <h3>Project Repository</h3>
-      <ul>
-        <li>
-          <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">
-            github.com/LupoSun/CS284A_50CelShades
-          </a>
-        </li>
-      </ul>
-
-      <h3>References</h3>
+      <h3>Information Resources</h3>
       <ul class="ref-list">
         <li>
-          [1] Lake, A., Marshall, C., Harris, M., &amp; Blackstein, M. (2000).
-          <em>Stylized Rendering Techniques for Scalable Real-Time 3D Animation.</em> NPAR 2000.
+          <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">
+            <strong>CS284A_50CelShades — Project Repository</strong></a>.
+          Our own GitHub repository and project page for the "Fifty Shades of Celluloid"
+          final project. Hosts the source code, project webpage, and deliverables.
         </li>
         <li>
-          [2] Gooch, B., Gooch, A., Shirley, P., &amp; Cohen, E. (1998).
-          <em>A Non-Photorealistic Lighting Model for Automatic Technical Illustration.</em>
-          SIGGRAPH 1998.
-          <a href="https://doi.org/10.1145/280814.280950" target="_blank" rel="noopener">
-            doi:10.1145/280814.280950
-          </a>
-        </li>
-        <li>
-          [3] Decaudin, P. (1996).
-          <em>Cartoon-Looking Rendering of 3D Scenes.</em> INRIA Research Report.
-        </li>
-        <li>
-          [4] Raskar, R., &amp; Cohen, M. (1999).
-          <em>Image Precision Silhouette Edges.</em> SI3D 1999.
-        </li>
-        <li>
-          [5] Wikipedia —
           <a href="https://en.wikipedia.org/wiki/Cel_shading" target="_blank" rel="noopener">
-            Cel shading
-          </a>.
+            <strong>Wikipedia — Cel shading</strong></a>.
+          Overview of cel/toon shading as a non-photorealistic rendering style that makes 3D
+          graphics appear flat and hand-drawn. Describes the two outline techniques we plan to
+          experiment with — inverted back-face culling and Sobel-style edge detection on depth
+          and normal buffers — and places the technique in historical context through games such
+          as <em>Jet Set Radio</em>, <em>The Wind Waker</em>, and <em>Ōkami</em>, and films like
+          <em>Into the Spider-Verse</em> and <em>Arcane</em>.
         </li>
         <li>
-          [6] "How Does Cel Shading Work?" —
           <a href="https://www.youtube.com/watch?v=dzItGHyteng" target="_blank" rel="noopener">
-            youtube.com/watch?v=dzItGHyteng
-          </a>.
+            <strong>Cel-shading tutorial video (YouTube)</strong></a>.
+          Reference walkthrough of a cel-shading shader pipeline — used as a starting point for
+          how to structure the ramp-based lighting and outline passes.
         </li>
         <li>
-          [7] CS284A Course Notes — UC Berkeley, Spring 2026.
-          <a href="https://cs184.eecs.berkeley.edu" target="_blank" rel="noopener">
-            cs184.eecs.berkeley.edu
-          </a>
+          <a href="https://www.youtube.com/watch?v=s8N00rjil_4" target="_blank" rel="noopener">
+            <strong>Stylized rendering tutorial video (YouTube)</strong></a>.
+          Additional reference on stylized toon rendering and outline techniques; we use it as a
+          visual target for what our pipeline should achieve.
+        </li>
+        <li>
+          <a href="https://forum.babylonjs.com/t/how-can-i-create-a-beautiful-outline-for-meshes-aka-cell-shading/61556" target="_blank" rel="noopener">
+            <strong>Babylon.js forum — Creating beautiful outlines for meshes (cel shading)</strong></a>.
+          Community thread discussing practical pitfalls of mesh outlines: built-in edge renderers
+          producing overly thick or flickering lines, post-process approaches creating dotted
+          artifacts during camera motion, and suggested fixes using Sobel edge-detection
+          post-processes, outline post-processes, toon shaders, and edge-width / epsilon tuning.
+          Directly relevant to the outline-stability problem we flag in our goals.
+        </li>
+        <li>
+          <a href="http://sibgrapi.sid.inpe.br/col/sid.inpe.br/sibgrapi/2010/09.15.18.18/doc/texture-based_wireframe_rendering.pdf" target="_blank" rel="noopener">
+            <strong>Texture-Based Wireframe Rendering (SIBGRAPI 2010)</strong></a>.
+          Paper on rendering wireframes / interior edges via texture-space techniques rather than
+          geometric edge extraction. A useful reference for our interior-crease detection pass
+          beyond silhouette outlines.
+        </li>
+        <li>
+          <a href="https://raulreyesfinalproject.wordpress.com/wp-content/uploads/2012/12/dissertation_cell-shading-raul_reyes_luque.pdf" target="_blank" rel="noopener">
+            <strong>Raul Reyes Luque — Cell-Shading Dissertation (2012)</strong></a>.
+          A final-project dissertation on cel-shading techniques, accompanying the author's
+          animated short-film project that combines 2D character animation with 3D environments.
+          Useful as a worked example of integrating cel-shading into a real production pipeline.
         </li>
       </ul>
     </div>
   </section>
 
   <!-- ── Contributions ─────────────────────────────────────────── -->
-  <section id="contributions">
+  <section id="contributions" hidden>
     <h2>Contributions</h2>
     <div class="card">
       <table>
