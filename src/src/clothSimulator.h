@@ -112,7 +112,8 @@ private:
   bool saveCelPreset(const std::string &path);
   bool loadCelPreset(const std::string &path);
   bool exportCelHLSL(const std::string &path);
-  void reloadCelTexture(const std::string &path);
+  bool reloadCelTexture(const std::string &path);
+  void bindManagedTextures() const;
 
   // Camera attributes
 

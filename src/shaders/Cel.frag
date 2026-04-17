@@ -37,6 +37,7 @@ void main() {
   vec3 L = normalize(u_cel_light_dir);
 
   vec4 tri_pattern = triplanarSample(u_texture_1, v_position.xyz, N, u_cel_pattern_scale);
+  float pattern_value = dot(tri_pattern.rgb, vec3(0.299, 0.587, 0.114));
 
   float ndotl = dot(N, L);
 
@@ -45,8 +46,7 @@ void main() {
   float lit_quantized = floor(ramp * bands) / bands;
   float dark_mask = 1.0 - lit_quantized;
   float dark_blend_scalar = dark_mask * u_cel_shadow_strength;
-  vec4 dark_blend = tri_pattern * dark_blend_scalar;
-  float dark_T = clamp(dark_blend.r, 0.0, 1.0);
+  float dark_T = clamp(pattern_value * dark_blend_scalar, 0.0, 1.0);
 
   vec3 shaded = mix(u_color.rgb, u_cel_dark_color, dark_T);
 

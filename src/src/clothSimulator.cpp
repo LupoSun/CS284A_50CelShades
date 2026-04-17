@@ -41,9 +41,18 @@ Vector3D load_texture(int frame_idx, GLuint handle, const char* where) {
   glActiveTexture(GL_TEXTURE0 + frame_idx);
   glBindTexture(GL_TEXTURE_2D, handle);
   
-  
-  int img_x, img_y, img_n;
+  int img_x = 0, img_y = 0, img_n = 0;
   unsigned char* img_data = stbi_load(where, &img_x, &img_y, &img_n, 3);
+  if (img_data == nullptr) {
+    const char *reason = stbi_failure_reason();
+    std::cout << "Texture load failed: " << where;
+    if (reason != nullptr) {
+      std::cout << " (" << reason << ")";
+    }
+    std::cout << std::endl;
+    return size_retval;
+  }
+
   size_retval.x = img_x;
   size_retval.y = img_y;
   size_retval.z = img_n;
@@ -77,6 +86,25 @@ void load_cubemap(int frame_idx, GLuint handle, const std::vector<std::string>& 
   }
 }
 
+void ClothSimulator::bindManagedTextures() const {
+  glActiveTexture(GL_TEXTURE0 + 1);
+  glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
+  glActiveTexture(GL_TEXTURE0 + 2);
+  glBindTexture(GL_TEXTURE_2D, m_gl_texture_2);
+  glActiveTexture(GL_TEXTURE0 + 3);
+  glBindTexture(GL_TEXTURE_2D, m_gl_texture_3);
+  glActiveTexture(GL_TEXTURE0 + 4);
+  glBindTexture(GL_TEXTURE_2D, m_gl_texture_4);
+  glActiveTexture(GL_TEXTURE0 + 5);
+  glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
+
+  // Keep unit 0 populated with valid fallback textures to avoid driver warnings
+  // and undefined sampler state in auxiliary UI passes.
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
+  glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
+}
+
 void ClothSimulator::load_textures() {
   glGenTextures(1, &m_gl_texture_1);
   glGenTextures(1, &m_gl_texture_2);
@@ -105,13 +133,7 @@ void ClothSimulator::load_textures() {
   
   load_cubemap(5, m_gl_cubemap_tex, cubemap_fnames);
   std::cout << "Loaded cubemap texture" << std::endl;
-
-  // Keep unit 0 populated with valid fallback textures. Apple's OpenGL
-  // driver can warn if a shader or UI pass touches sampler unit 0 before
-  // an explicit binding has been established there.
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
-  glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
+  bindManagedTextures();
 }
 
 void ClothSimulator::load_shaders() {
@@ -273,10 +295,18 @@ bool ClothSimulator::loadCelPreset(const std::string &path) {
   return true;
 }
 
-void ClothSimulator::reloadCelTexture(const std::string &path) {
+bool ClothSimulator::reloadCelTexture(const std::string &path) {
+  Vector3D new_size = load_texture(1, m_gl_texture_1, path.c_str());
+  if (new_size.x <= 0 || new_size.y <= 0) {
+    std::cout << "Cel texture reload skipped: " << path << std::endl;
+    return false;
+  }
+
   m_cel_texture_path = path;
-  load_texture(1, m_gl_texture_1, path.c_str());
+  m_gl_texture_1_size = new_size;
+  bindManagedTextures();
   std::cout << "Cel texture reloaded: " << path << std::endl;
+  return true;
 }
 
 bool ClothSimulator::exportCelHLSL(const std::string &path) {
@@ -467,6 +497,7 @@ void ClothSimulator::drawContents() {
 
   GLShader &shader = *active_shader.nanogui_shader;
   shader.bind();
+  bindManagedTextures();
 
   // Prepare the camera projection matrix
 
@@ -1143,8 +1174,16 @@ void ClothSimulator::initGUI(Screen *screen) {
         std::string path = nanogui::file_dialog(
             {{"png","PNG"}, {"jpg","JPEG"}, {"bmp","BMP"}, {"tga","TGA"}}, false);
         if (path.empty()) return;
-        reloadCelTexture(path);
-        std::string fname = path.substr(path.find_last_of("/\\") + 1);
+        if (reloadCelTexture(path)) {
+          std::string fname = path.substr(path.find_last_of("/\\") + 1);
+          name_lbl->setCaption(fname);
+        }
+      });
+
+      refreshes->push_back([this, name_lbl] {
+        std::string fname = m_cel_texture_path.empty()
+            ? "texture_1.png"
+            : m_cel_texture_path.substr(m_cel_texture_path.find_last_of("/\\") + 1);
         name_lbl->setCaption(fname);
       });
     }
