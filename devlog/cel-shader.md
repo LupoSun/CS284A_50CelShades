@@ -11,6 +11,7 @@ live tweaking, and how presets travel between people (and eventually Blender).
 - Save/load: **Save**, **Save As**, **Load** buttons write/read JSON presets
 - Default preset location: `src/scene/cel_preset.json` (auto-loaded on startup)
 - Default active shader is now **Cel** (falls back to Wireframe if Cel fails to compile)
+- **Export HLSL** button generates a ready-to-import Unity `.shader` file with current values baked as defaults
 
 ## What the shader does
 
@@ -118,6 +119,8 @@ Or with an explicit project root (the one that contains `shaders/Default.vert`
   std::function the load path calls to push values back into widgets.
 - [clothSimulator.cpp](../src/src/clothSimulator.cpp):
   - `saveCelPreset` / `loadCelPreset` / `defaultCelPresetPath`
+  - `exportCelHLSL(path)` — streams a complete `.shader` file with current
+    member values substituted into the Properties block and HLSL body
   - `drawContents()` PHONG branch uploads all `u_cel_*` uniforms from members
     instead of literals.
   - `initGUI()` builds the Cel Shader panel and collects refresh callbacks
@@ -125,6 +128,33 @@ Or with an explicit project root (the one that contains `shaders/Default.vert`
     into its widget (so **Load** actually updates the visible numbers).
 - `load_shaders()` prefers "Cel" as the default active shader, falling back
   to "Wireframe" if Cel didn't compile.
+
+## Export to Unity HLSL
+
+Click **Export HLSL** in the button row to generate a Unity `.shader` file
+(Built-in render pipeline). All current GUI values are written as `Properties`
+defaults so the Unity inspector starts from your exact look.
+
+The exported file targets Unity's **Built-in pipeline** via `UnityCG.cginc`.
+To adapt to **URP**, the main changes are:
+
+- Replace `CGPROGRAM / ENDCG` with `HLSLPROGRAM / ENDHLSL`
+- Replace `#include "UnityCG.cginc"` with `#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"`
+- Replace `UnityObjectToClipPos` → `TransformObjectToHClip`
+- Replace `UnityObjectToWorldNormal` → `TransformObjectToWorldNormal`
+- Replace `tex2D(tex, uv)` → `SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv)`
+
+The math inside `frag()` is identical in both pipelines — only the wiring
+changes.
+
+**Workflow:** tune in cloth sim GUI → **Export HLSL** → drop `.shader` into
+your Unity `Assets/Shaders/` folder → assign to a material → assign the cotton
+texture to `_MainTex`.
+
+The exported shader **is not** the same as the original Unity Shader Graph. It
+is a hand-translated HLSL equivalent. If you need the Shader Graph version,
+use the whiteboard diagram as reference — the node structure maps 1:1 to the
+HLSL logic in the export.
 
 ## Blender port
 

@@ -110,6 +110,7 @@ private:
   std::string defaultCelPresetPath() const;
   bool saveCelPreset(const std::string &path);
   bool loadCelPreset(const std::string &path);
+  bool exportCelHLSL(const std::string &path);
 
   // Camera attributes
 

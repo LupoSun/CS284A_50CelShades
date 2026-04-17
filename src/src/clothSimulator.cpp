@@ -2,6 +2,7 @@
 #include <glad/glad.h>
 
 #include <fstream>
+#include <sstream>
 
 #include <CGL/vector3D.h>
 #include <nanogui/nanogui.h>
@@ -263,6 +264,104 @@ bool ClothSimulator::loadCelPreset(const std::string &path) {
 
   if (m_refresh_cel_widgets) m_refresh_cel_widgets();
   std::cout << "Cel preset loaded: " << path << std::endl;
+  return true;
+}
+
+bool ClothSimulator::exportCelHLSL(const std::string &path) {
+  std::ofstream out(path);
+  if (!out.is_open()) {
+    std::cout << "HLSL export: could not open for write: " << path << std::endl;
+    return false;
+  }
+
+  std::ostringstream s;
+  s.precision(4);
+  s << std::fixed;
+
+  s << "// Auto-exported from CS284A_50CelShades cloth simulator.\n";
+  s << "// Current GUI values are baked in as Property defaults;\n";
+  s << "// tweak in the Unity inspector after import.\n";
+  s << "Shader \"Custom/Cel_Exported\" {\n";
+  s << "    Properties {\n";
+  s << "        _BaseColor (\"Base Color\", Color) = ("
+    << color[0] << ", " << color[1] << ", " << color[2] << ", " << color[3] << ")\n";
+  s << "        _DarkColor (\"Dark Color\", Color) = ("
+    << m_cel_dark_color[0] << ", " << m_cel_dark_color[1] << ", "
+    << m_cel_dark_color[2] << ", " << m_cel_dark_color[3] << ")\n";
+  s << "        _BrightColor (\"Bright Color\", Color) = ("
+    << m_cel_bright_color[0] << ", " << m_cel_bright_color[1] << ", "
+    << m_cel_bright_color[2] << ", " << m_cel_bright_color[3] << ")\n";
+  s << "        _LightDir (\"Light Direction\", Vector) = ("
+    << m_cel_light_dir.x() << ", " << m_cel_light_dir.y() << ", "
+    << m_cel_light_dir.z() << ", 0)\n";
+  s << "        _DarkThreshold (\"Dark Threshold\", Range(0,1)) = " << m_cel_dark_threshold << "\n";
+  s << "        _BrightThreshold (\"Bright Threshold\", Range(0,1)) = " << m_cel_bright_threshold << "\n";
+  s << "        _ShadowStrength (\"Shadow Strength\", Range(0,1)) = " << m_cel_shadow_strength << "\n";
+  s << "        _HighlightStrength (\"Highlight Strength\", Range(0,2)) = " << m_cel_highlight_strength << "\n";
+  s << "        _PatternScale (\"Pattern Scale\", Range(0.05,30)) = " << m_cel_pattern_scale << "\n";
+  s << "        _Bands (\"Bands\", Range(1,16)) = " << m_cel_bands << "\n";
+  s << "        _MainTex (\"Pattern Texture\", 2D) = \"white\" {}\n";
+  s << "    }\n";
+  s << "    SubShader {\n";
+  s << "        Tags { \"RenderType\"=\"Opaque\" }\n";
+  s << "        Pass {\n";
+  s << "            CGPROGRAM\n";
+  s << "            #pragma vertex vert\n";
+  s << "            #pragma fragment frag\n";
+  s << "            #include \"UnityCG.cginc\"\n\n";
+  s << "            struct appdata {\n";
+  s << "                float4 vertex : POSITION;\n";
+  s << "                float3 normal : NORMAL;\n";
+  s << "            };\n";
+  s << "            struct v2f {\n";
+  s << "                float4 pos : SV_POSITION;\n";
+  s << "                float3 worldPos : TEXCOORD0;\n";
+  s << "                float3 worldNormal : TEXCOORD1;\n";
+  s << "            };\n\n";
+  s << "            sampler2D _MainTex;\n";
+  s << "            float4 _BaseColor, _DarkColor, _BrightColor, _LightDir;\n";
+  s << "            float _DarkThreshold, _BrightThreshold;\n";
+  s << "            float _ShadowStrength, _HighlightStrength;\n";
+  s << "            float _PatternScale, _Bands;\n\n";
+  s << "            v2f vert(appdata v) {\n";
+  s << "                v2f o;\n";
+  s << "                o.pos = UnityObjectToClipPos(v.vertex);\n";
+  s << "                o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;\n";
+  s << "                o.worldNormal = UnityObjectToWorldNormal(v.normal);\n";
+  s << "                return o;\n";
+  s << "            }\n\n";
+  s << "            float4 triplanarSample(sampler2D tex, float3 pos, float3 n, float tiling) {\n";
+  s << "                float3 w = max(abs(n), 1e-5);\n";
+  s << "                w /= (w.x + w.y + w.z);\n";
+  s << "                float4 sx = tex2D(tex, pos.yz * tiling);\n";
+  s << "                float4 sy = tex2D(tex, pos.xz * tiling);\n";
+  s << "                float4 sz = tex2D(tex, pos.xy * tiling);\n";
+  s << "                return sx * w.x + sy * w.y + sz * w.z;\n";
+  s << "            }\n\n";
+  s << "            float4 frag(v2f i) : SV_Target {\n";
+  s << "                float3 N = normalize(i.worldNormal);\n";
+  s << "                float3 L = normalize(_LightDir.xyz);\n";
+  s << "                float4 triPat = triplanarSample(_MainTex, i.worldPos, N, _PatternScale);\n";
+  s << "                float ndotl = dot(N, L);\n";
+  s << "                float bands = max(1.0, _Bands);\n";
+  s << "                float ramp = saturate(ndotl / max(_DarkThreshold, 1e-3));\n";
+  s << "                float litQ = floor(ramp * bands) / bands;\n";
+  s << "                float darkMask = 1.0 - litQ;\n";
+  s << "                float darkBlend = darkMask * _ShadowStrength;\n";
+  s << "                float darkT = saturate(triPat.r * darkBlend);\n";
+  s << "                float3 shaded = lerp(_BaseColor.rgb, _DarkColor.rgb, darkT);\n";
+  s << "                float brightMask = step(_BrightThreshold, ndotl);\n";
+  s << "                float3 highlight = brightMask * _BrightColor.rgb * _HighlightStrength;\n";
+  s << "                return float4(min(shaded + highlight, 1.0), _BaseColor.a);\n";
+  s << "            }\n";
+  s << "            ENDCG\n";
+  s << "        }\n";
+  s << "    }\n";
+  s << "    FallBack \"Diffuse\"\n";
+  s << "}\n";
+
+  out << s.str();
+  std::cout << "HLSL exported: " << path << std::endl;
   return true;
 }
 
@@ -1064,6 +1163,14 @@ void ClothSimulator::initGUI(Screen *screen) {
       std::string path = nanogui::file_dialog(
           {{"json", "Cel preset"}}, false);
       if (!path.empty()) loadCelPreset(path);
+    });
+
+    Button *hlsl_btn = new Button(panel, "Export HLSL");
+    hlsl_btn->setFontSize(14);
+    hlsl_btn->setCallback([this] {
+      std::string path = nanogui::file_dialog(
+          {{"shader", "Unity HLSL shader"}}, true);
+      if (!path.empty()) exportCelHLSL(path);
     });
   }
 }
