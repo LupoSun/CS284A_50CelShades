@@ -189,6 +189,7 @@ ClothSimulator::ClothSimulator(std::string project_root, Screen *screen)
 
   this->load_shaders();
   this->load_textures();
+  m_cel_texture_path = m_project_root + "/textures/texture_1.png";
   this->loadCelPreset(defaultCelPresetPath());
 
   glEnable(GL_PROGRAM_POINT_SIZE);
@@ -215,6 +216,7 @@ bool ClothSimulator::saveCelPreset(const std::string &path) {
   j["pattern_scale"] = m_cel_pattern_scale;
   j["pattern_radius"] = m_cel_pattern_radius;
   j["bands"] = m_cel_bands;
+  if (!m_cel_texture_path.empty()) j["texture_path"] = m_cel_texture_path;
 
   std::ofstream out(path);
   if (!out.is_open()) {
@@ -261,10 +263,20 @@ bool ClothSimulator::loadCelPreset(const std::string &path) {
   if (has("pattern_scale")) m_cel_pattern_scale = j["pattern_scale"];
   if (has("pattern_radius")) m_cel_pattern_radius = j["pattern_radius"];
   if (has("bands")) m_cel_bands = j["bands"];
+  if (has("texture_path")) {
+    std::string tex = j["texture_path"];
+    if (!tex.empty()) reloadCelTexture(tex);
+  }
 
   if (m_refresh_cel_widgets) m_refresh_cel_widgets();
   std::cout << "Cel preset loaded: " << path << std::endl;
   return true;
+}
+
+void ClothSimulator::reloadCelTexture(const std::string &path) {
+  m_cel_texture_path = path;
+  load_texture(1, m_gl_texture_1, path.c_str());
+  std::cout << "Cel texture reloaded: " << path << std::endl;
 }
 
 bool ClothSimulator::exportCelHLSL(const std::string &path) {
@@ -1110,6 +1122,32 @@ void ClothSimulator::initGUI(Screen *screen) {
     bright_picker->setCallback(
         [this](const nanogui::Color &c) { m_cel_bright_color = c; });
     refreshes->push_back([this, bright_picker] { bright_picker->setColor(m_cel_bright_color); });
+
+    // Texture picker
+    new Label(panel, "Pattern tex :", "sans-bold");
+    {
+      Widget *row = new Widget(panel);
+      row->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 4));
+
+      auto tex_label = std::make_shared<std::string>(
+          m_cel_texture_path.empty() ? "texture_1.png"
+          : m_cel_texture_path.substr(m_cel_texture_path.find_last_of("/\\") + 1));
+
+      Label *name_lbl = new Label(row, *tex_label, "sans");
+      name_lbl->setFixedWidth(60);
+      name_lbl->setFontSize(12);
+
+      Button *browse_btn = new Button(row, "Browse");
+      browse_btn->setFontSize(12);
+      browse_btn->setCallback([this, name_lbl] {
+        std::string path = nanogui::file_dialog(
+            {{"png","PNG"}, {"jpg","JPEG"}, {"bmp","BMP"}, {"tga","TGA"}}, false);
+        if (path.empty()) return;
+        reloadCelTexture(path);
+        std::string fname = path.substr(path.find_last_of("/\\") + 1);
+        name_lbl->setCaption(fname);
+      });
+    }
 
     add_float("Dark thresh :", &m_cel_dark_threshold, 0.0f, 1.0f, 0.02f);
     add_float("Bright thresh :", &m_cel_bright_threshold, 0.0f, 1.0f, 0.02f);

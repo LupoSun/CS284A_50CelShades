@@ -104,6 +104,7 @@ private:
   float m_cel_pattern_scale = 1.0f;
   float m_cel_pattern_radius = 0.18f;
   float m_cel_bands = 4.0f;
+  std::string m_cel_texture_path;
 
   std::function<void()> m_refresh_cel_widgets;
 
@@ -111,6 +112,7 @@ private:
   bool saveCelPreset(const std::string &path);
   bool loadCelPreset(const std::string &path);
   bool exportCelHLSL(const std::string &path);
+  void reloadCelTexture(const std::string &path);
 
   // Camera attributes
 
