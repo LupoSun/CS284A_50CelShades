@@ -4,9 +4,17 @@ CS284A Final Project · Spring 2026 · UC Berkeley
 ## Repository Structure
 
 ```
-├── website/       # GitHub Pages project website
+├── docs/          # GitHub Pages project website
 │   └── index.html
-├── src/           # Implementation source code
+├── src/           # Implementation (based on hw4-clothsim)
+│   ├── CMakeLists.txt
+│   ├── CGL/
+│   ├── ext/
+│   ├── src/       # Core source code (C++)
+│   ├── shaders/   # GLSL shaders
+│   ├── scene/     # Scene definition files
+│   ├── textures/  # Texture assets
+│   └── docs/
 └── README.md
 ```
 
