@@ -35,10 +35,12 @@ build.ninja
 
 # IDE and editor files
 .vscode/
+.vs/
 .idea/
 *.swp
 *.swo
 *~
+
 
 # OS-specific clutter
 .DS_Store
