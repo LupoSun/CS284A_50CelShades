@@ -1,3 +1,46 @@
+# Local tooling
 .claude/
+
+# Archives and packaged submissions
 *.zip
+
+# Build directories
 build/
+cmake-build-*/
+out/
+bin/
+
+# CMake and Ninja generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Compiled objects and local binaries
+*.o
+*.obj
+*.d
+*.dSYM/
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS-specific clutter
+.DS_Store
+Thumbs.db
+.cache/

@@ -43,15 +43,12 @@ void error_callback(int error, const char* description) {
   puts(description);
 }
 
-void createGLContexts() {
-  if (!glfwInit()) {
-    return;
-  }
+namespace {
 
-  glfwSetTime(0);
-
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+void applyWindowHints(int major, int minor) {
+  glfwDefaultWindowHints();
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, major);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, minor);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
@@ -63,9 +60,34 @@ void createGLContexts() {
   glfwWindowHint(GLFW_STENCIL_BITS, 8);
   glfwWindowHint(GLFW_DEPTH_BITS, 24);
   glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
+}
 
-  // Create a GLFWwindow object
-  window = glfwCreateWindow(800, 800, "Cloth Simulator", nullptr, nullptr);
+GLFWwindow *createWindowForVersion(int major, int minor) {
+  applyWindowHints(major, minor);
+  return glfwCreateWindow(800, 800, "Cloth Simulator", nullptr, nullptr);
+}
+
+} // namespace
+
+void createGLContexts() {
+  if (!glfwInit()) {
+    return;
+  }
+
+  glfwSetTime(0);
+
+  // Prefer a newer context so custom shaders can target GLSL 410, but
+  // fall back to the original 3.3 core profile if the driver cannot create it.
+  window = createWindowForVersion(4, 1);
+  if (window != nullptr) {
+    std::cout << "Created OpenGL 4.1 core context." << std::endl;
+  } else {
+    window = createWindowForVersion(3, 3);
+    if (window != nullptr) {
+      std::cout << "Falling back to OpenGL 3.3 core context." << std::endl;
+    }
+  }
+
   if (window == nullptr) {
     std::cout << "Failed to create GLFW window" << std::endl;
     glfwTerminate();
@@ -77,6 +99,15 @@ void createGLContexts() {
     throw std::runtime_error("Could not initialize GLAD!");
   }
   glGetError(); // pull and ignore unhandled errors like GL_INVALID_ENUM
+
+  const GLubyte *gl_version = glGetString(GL_VERSION);
+  const GLubyte *glsl_version = glGetString(GL_SHADING_LANGUAGE_VERSION);
+  if (gl_version != nullptr) {
+    std::cout << "OpenGL version: " << gl_version << std::endl;
+  }
+  if (glsl_version != nullptr) {
+    std::cout << "GLSL version: " << glsl_version << std::endl;
+  }
 
   glClearColor(0.2f, 0.25f, 0.3f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);

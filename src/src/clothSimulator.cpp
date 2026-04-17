@@ -1,8 +1,13 @@
 #include <cmath>
 #include <glad/glad.h>
 
+#include <fstream>
+
 #include <CGL/vector3D.h>
 #include <nanogui/nanogui.h>
+#include <nanogui/colorpicker.h>
+
+#include "json.hpp"
 
 #include "clothSimulator.h"
 
@@ -18,6 +23,14 @@
 
 using namespace nanogui;
 using namespace std;
+
+namespace {
+
+Vector3f colorToVec3(const nanogui::Color &color) {
+  return Vector3f(color[0], color[1], color[2]);
+}
+
+} // namespace
 
 Vector3D load_texture(int frame_idx, GLuint handle, const char* where) {
   Vector3D size_retval;
@@ -91,6 +104,13 @@ void ClothSimulator::load_textures() {
   
   load_cubemap(5, m_gl_cubemap_tex, cubemap_fnames);
   std::cout << "Loaded cubemap texture" << std::endl;
+
+  // Keep unit 0 populated with valid fallback textures. Apple's OpenGL
+  // driver can warn if a shader or UI pass touches sampler unit 0 before
+  // an explicit binding has been established there.
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
+  glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
 }
 
 void ClothSimulator::load_shaders() {
@@ -123,8 +143,14 @@ void ClothSimulator::load_shaders() {
     }
     
     std::shared_ptr<GLShader> nanogui_shader = make_shared<GLShader>();
-    nanogui_shader->initFromFiles(shader_name, vert_shader,
-                                  m_project_root + "/shaders/" + shader_fname);
+    try {
+      nanogui_shader->initFromFiles(shader_name, vert_shader,
+                                    m_project_root + "/shaders/" + shader_fname);
+    } catch (const std::exception &e) {
+      std::cout << "Skipping shader \"" << shader_name
+                << "\" due to compile/link failure: " << e.what() << std::endl;
+      continue;
+    }
     
     // Special filenames are treated a bit differently
     ShaderTypeHint hint;
@@ -145,24 +171,99 @@ void ClothSimulator::load_shaders() {
     shaders_combobox_names.push_back(shader_name);
   }
   
-  // Assuming that it's there, use "Wireframe" by default
+  // Prefer "Cel" as the default, fall back to "Wireframe".
+  int cel_idx = -1;
+  int wireframe_idx = -1;
   for (size_t i = 0; i < shaders_combobox_names.size(); ++i) {
-    if (shaders_combobox_names[i] == "Wireframe") {
-      active_shader_idx = i;
-      break;
-    }
+    if (shaders_combobox_names[i] == "Cel") cel_idx = (int)i;
+    else if (shaders_combobox_names[i] == "Wireframe") wireframe_idx = (int)i;
   }
+  if (cel_idx >= 0) active_shader_idx = cel_idx;
+  else if (wireframe_idx >= 0) active_shader_idx = wireframe_idx;
 }
 
 ClothSimulator::ClothSimulator(std::string project_root, Screen *screen)
 : m_project_root(project_root) {
   this->screen = screen;
-  
+
   this->load_shaders();
   this->load_textures();
+  this->loadCelPreset(defaultCelPresetPath());
 
   glEnable(GL_PROGRAM_POINT_SIZE);
   glEnable(GL_DEPTH_TEST);
+}
+
+std::string ClothSimulator::defaultCelPresetPath() const {
+  return m_project_root + "/scene/cel_preset.json";
+}
+
+bool ClothSimulator::saveCelPreset(const std::string &path) {
+  nlohmann::json j;
+  j["base_color"] = {color[0], color[1], color[2], color[3]};
+  j["dark_color"] = {m_cel_dark_color[0], m_cel_dark_color[1],
+                     m_cel_dark_color[2], m_cel_dark_color[3]};
+  j["bright_color"] = {m_cel_bright_color[0], m_cel_bright_color[1],
+                       m_cel_bright_color[2], m_cel_bright_color[3]};
+  j["light_dir"] = {m_cel_light_dir.x(), m_cel_light_dir.y(),
+                    m_cel_light_dir.z()};
+  j["dark_threshold"] = m_cel_dark_threshold;
+  j["bright_threshold"] = m_cel_bright_threshold;
+  j["shadow_strength"] = m_cel_shadow_strength;
+  j["highlight_strength"] = m_cel_highlight_strength;
+  j["pattern_scale"] = m_cel_pattern_scale;
+  j["pattern_radius"] = m_cel_pattern_radius;
+  j["bands"] = m_cel_bands;
+
+  std::ofstream out(path);
+  if (!out.is_open()) {
+    std::cout << "Cel preset: could not open for write: " << path << std::endl;
+    return false;
+  }
+  out << j.dump(2);
+  std::cout << "Cel preset saved: " << path << std::endl;
+  return true;
+}
+
+bool ClothSimulator::loadCelPreset(const std::string &path) {
+  std::ifstream in(path);
+  if (!in.is_open()) return false;
+
+  nlohmann::json j;
+  try { in >> j; }
+  catch (const std::exception &e) {
+    std::cout << "Cel preset: parse error in " << path << ": " << e.what() << std::endl;
+    return false;
+  }
+
+  auto readColor = [](const nlohmann::json &arr, nanogui::Color &out) {
+    if (arr.is_array() && arr.size() >= 4) {
+      out = nanogui::Color((float)arr[0], (float)arr[1], (float)arr[2], (float)arr[3]);
+    }
+  };
+  auto readVec3 = [](const nlohmann::json &arr, nanogui::Vector3f &out) {
+    if (arr.is_array() && arr.size() >= 3) {
+      out = nanogui::Vector3f((float)arr[0], (float)arr[1], (float)arr[2]);
+    }
+  };
+
+  auto has = [&j](const char *key) { return j.find(key) != j.end(); };
+
+  if (has("base_color")) readColor(j["base_color"], color);
+  if (has("dark_color")) readColor(j["dark_color"], m_cel_dark_color);
+  if (has("bright_color")) readColor(j["bright_color"], m_cel_bright_color);
+  if (has("light_dir")) readVec3(j["light_dir"], m_cel_light_dir);
+  if (has("dark_threshold")) m_cel_dark_threshold = j["dark_threshold"];
+  if (has("bright_threshold")) m_cel_bright_threshold = j["bright_threshold"];
+  if (has("shadow_strength")) m_cel_shadow_strength = j["shadow_strength"];
+  if (has("highlight_strength")) m_cel_highlight_strength = j["highlight_strength"];
+  if (has("pattern_scale")) m_cel_pattern_scale = j["pattern_scale"];
+  if (has("pattern_radius")) m_cel_pattern_radius = j["pattern_radius"];
+  if (has("bands")) m_cel_bands = j["bands"];
+
+  if (m_refresh_cel_widgets) m_refresh_cel_widgets();
+  std::cout << "Cel preset loaded: " << path << std::endl;
+  return true;
 }
 
 ClothSimulator::~ClothSimulator() {
@@ -281,10 +382,22 @@ void ClothSimulator::drawContents() {
   
     // Others
     Vector3D cam_pos = camera.position();
+    Vector3f cel_light_dir = m_cel_light_dir.normalized();
+
     shader.setUniform("u_color", color, false);
     shader.setUniform("u_cam_pos", Vector3f(cam_pos.x, cam_pos.y, cam_pos.z), false);
     shader.setUniform("u_light_pos", Vector3f(0.5, 2, 2), false);
     shader.setUniform("u_light_intensity", Vector3f(3, 3, 3), false);
+    shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
+    shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
+    shader.setUniform("u_cel_light_dir", cel_light_dir, false);
+    shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
+    shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
+    shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
+    shader.setUniform("u_cel_highlight_strength", m_cel_highlight_strength, false);
+    shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
+    shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
+    shader.setUniform("u_cel_bands", m_cel_bands, false);
     shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
     shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
     shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
@@ -851,5 +964,106 @@ void ClothSimulator::initGUI(Screen *screen) {
     fb->setValue(this->m_height_scaling);
     fb->setSpinnable(true);
     fb->setCallback([this](float value) { this->m_height_scaling = value; });
+  }
+
+  // Cel shader live controls
+
+  new Label(window, "Cel Shader", "sans-bold");
+
+  {
+    Widget *panel = new Widget(window);
+    GridLayout *layout =
+        new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
+    layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
+    layout->setSpacing(0, 8);
+    panel->setLayout(layout);
+
+    auto refreshes = std::make_shared<std::vector<std::function<void()>>>();
+
+    auto add_float = [panel, refreshes](const std::string &label, float *target,
+                                        float minv, float maxv, float step) {
+      new Label(panel, label, "sans-bold");
+      FloatBox<float> *fb = new FloatBox<float>(panel);
+      fb->setEditable(true);
+      fb->setFixedSize(Vector2i(100, 20));
+      fb->setFontSize(14);
+      fb->setValue(*target);
+      fb->setMinValue(minv);
+      fb->setMaxValue(maxv);
+      fb->setValueIncrement(step);
+      fb->setSpinnable(true);
+      fb->setCallback([target](float v) { *target = v; });
+      refreshes->push_back([fb, target] { fb->setValue(*target); });
+    };
+
+    new Label(panel, "Dark color :", "sans-bold");
+    ColorPicker *dark_picker = new ColorPicker(panel, m_cel_dark_color);
+    dark_picker->setFixedSize(Vector2i(100, 20));
+    dark_picker->setFontSize(14);
+    dark_picker->setCallback(
+        [this](const nanogui::Color &c) { m_cel_dark_color = c; });
+    refreshes->push_back([this, dark_picker] { dark_picker->setColor(m_cel_dark_color); });
+
+    new Label(panel, "Bright color :", "sans-bold");
+    ColorPicker *bright_picker = new ColorPicker(panel, m_cel_bright_color);
+    bright_picker->setFixedSize(Vector2i(100, 20));
+    bright_picker->setFontSize(14);
+    bright_picker->setCallback(
+        [this](const nanogui::Color &c) { m_cel_bright_color = c; });
+    refreshes->push_back([this, bright_picker] { bright_picker->setColor(m_cel_bright_color); });
+
+    add_float("Dark thresh :", &m_cel_dark_threshold, 0.0f, 1.0f, 0.02f);
+    add_float("Bright thresh :", &m_cel_bright_threshold, 0.0f, 1.0f, 0.02f);
+    add_float("Shadow str :", &m_cel_shadow_strength, 0.0f, 1.0f, 0.05f);
+    add_float("Highlight str :", &m_cel_highlight_strength, 0.0f, 2.0f, 0.05f);
+    add_float("Pattern scale :", &m_cel_pattern_scale, 0.05f, 30.0f, 0.5f);
+    add_float("Bands :", &m_cel_bands, 1.0f, 16.0f, 1.0f);
+
+    auto make_axis = [panel, refreshes](const std::string &label, float *target) {
+      new Label(panel, label, "sans-bold");
+      FloatBox<float> *fb = new FloatBox<float>(panel);
+      fb->setEditable(true);
+      fb->setFixedSize(Vector2i(100, 20));
+      fb->setFontSize(14);
+      fb->setSpinnable(true);
+      fb->setValueIncrement(0.1f);
+      fb->setValue(*target);
+      fb->setCallback([target](float v) { *target = v; });
+      refreshes->push_back([fb, target] { fb->setValue(*target); });
+    };
+    make_axis("Light dir x :", &m_cel_light_dir.x());
+    make_axis("Light dir y :", &m_cel_light_dir.y());
+    make_axis("Light dir z :", &m_cel_light_dir.z());
+
+    m_refresh_cel_widgets = [refreshes] {
+      for (auto &cb : *refreshes) cb();
+    };
+  }
+
+  // Cel preset save/load buttons
+
+  {
+    Widget *panel = new Widget(window);
+    panel->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 4));
+
+    Button *save_btn = new Button(panel, "Save");
+    save_btn->setFontSize(14);
+    save_btn->setCallback([this] { saveCelPreset(defaultCelPresetPath()); });
+
+    Button *save_as_btn = new Button(panel, "Save As");
+    save_as_btn->setFontSize(14);
+    save_as_btn->setCallback([this] {
+      std::string path = nanogui::file_dialog(
+          {{"json", "Cel preset"}}, true);
+      if (!path.empty()) saveCelPreset(path);
+    });
+
+    Button *load_btn = new Button(panel, "Load");
+    load_btn->setFontSize(14);
+    load_btn->setCallback([this] {
+      std::string path = nanogui::file_dialog(
+          {{"json", "Cel preset"}}, false);
+      if (!path.empty()) loadCelPreset(path);
+    });
   }
 }

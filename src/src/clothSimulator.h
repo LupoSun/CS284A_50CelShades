@@ -2,7 +2,9 @@
 #define CGL_CLOTH_SIMULATOR_H
 
 #include <nanogui/nanogui.h>
+#include <functional>
 #include <memory>
+#include <string>
 
 #include "camera.h"
 #include "cloth.h"
@@ -60,7 +62,7 @@ private:
   int simulation_steps = 30;
 
   CGL::Vector3D gravity = CGL::Vector3D(0, -9.8, 0);
-  nanogui::Color color = nanogui::Color(1.0f, 1.0f, 1.0f, 1.0f);
+  nanogui::Color color = nanogui::Color(0.85f, 0.35f, 0.40f, 1.0f);
 
   Cloth *cloth;
   ClothParameters *cp;
@@ -86,9 +88,28 @@ private:
   GLuint m_gl_cubemap_tex;
   
   // OpenGL customizable inputs
-  
+
   double m_normal_scaling = 2.0;
   double m_height_scaling = 0.1;
+
+  // Cel shader parameters (live-tweakable via Appearance GUI)
+
+  nanogui::Color m_cel_dark_color = nanogui::Color(0.38f, 0.16f, 0.18f, 1.0f);
+  nanogui::Color m_cel_bright_color = nanogui::Color(1.0f, 0.85f, 0.78f, 1.0f);
+  nanogui::Vector3f m_cel_light_dir = nanogui::Vector3f(0.5f, 2.0f, 2.0f);
+  float m_cel_dark_threshold = 0.42f;
+  float m_cel_bright_threshold = 0.95f;
+  float m_cel_shadow_strength = 0.9f;
+  float m_cel_highlight_strength = 0.18f;
+  float m_cel_pattern_scale = 1.0f;
+  float m_cel_pattern_radius = 0.18f;
+  float m_cel_bands = 4.0f;
+
+  std::function<void()> m_refresh_cel_widgets;
+
+  std::string defaultCelPresetPath() const;
+  bool saveCelPreset(const std::string &path);
+  bool loadCelPreset(const std::string &path);
 
   // Camera attributes
 
