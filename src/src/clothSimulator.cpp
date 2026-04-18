@@ -41,25 +41,73 @@ Vector3D load_texture(int frame_idx, GLuint handle, const char* where) {
   glActiveTexture(GL_TEXTURE0 + frame_idx);
   glBindTexture(GL_TEXTURE_2D, handle);
   
-  int img_x = 0, img_y = 0, img_n = 0;
+  
+  int img_x, img_y, img_n;
   unsigned char* img_data = stbi_load(where, &img_x, &img_y, &img_n, 3);
-  if (img_data == nullptr) {
-    const char *reason = stbi_failure_reason();
-    std::cout << "Texture load failed: " << where;
-    if (reason != nullptr) {
-      std::cout << " (" << reason << ")";
-    }
-    std::cout << std::endl;
-    return size_retval;
-  }
-
+  if (!img_data) return size_retval;
   size_retval.x = img_x;
   size_retval.y = img_y;
   size_retval.z = img_n;
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img_x, img_y, 0, GL_RGB, GL_UNSIGNED_BYTE, img_data);
+
+  // Upload base level and generate mipmaps on the CPU by downsampling successive levels.
+  int width = img_x;
+  int height = img_y;
+  const int channels = 3;
+
+  // Copy image data into a vector for CPU-side mip generation and free stb image buffer.
+  std::vector<unsigned char> curr(img_data, img_data + (width * height * channels));
   stbi_image_free(img_data);
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  int level = 0;
+  while (true) {
+    // Upload current mip level
+    glTexImage2D(GL_TEXTURE_2D, level, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, curr.data());
+
+    // Stop if we reached 1x1
+    if (width == 1 && height == 1) break;
+
+    // Compute next level size
+    int next_w = std::max(1, width / 2);
+    int next_h = std::max(1, height / 2);
+    std::vector<unsigned char> next(next_w * next_h * channels);
+
+    // Simple box filter 2x2 -> 1 averaging
+    for (int y = 0; y < next_h; ++y) {
+      for (int x = 0; x < next_w; ++x) {
+        int dst_idx = (y * next_w + x) * channels;
+        // average up to 4 texels from curr
+        int src_x = x * 2;
+        int src_y = y * 2;
+        int accum[3] = {0, 0, 0};
+        int count = 0;
+        for (int oy = 0; oy < 2; ++oy) {
+          for (int ox = 0; ox < 2; ++ox) {
+            int sx = src_x + ox;
+            int sy = src_y + oy;
+            if (sx < width && sy < height) {
+              int src_idx = (sy * width + sx) * channels;
+              accum[0] += curr[src_idx + 0];
+              accum[1] += curr[src_idx + 1];
+              accum[2] += curr[src_idx + 2];
+              ++count;
+            }
+          }
+        }
+        next[dst_idx + 0] = (unsigned char)(accum[0] / count);
+        next[dst_idx + 1] = (unsigned char)(accum[1] / count);
+        next[dst_idx + 2] = (unsigned char)(accum[2] / count);
+      }
+    }
+
+    // Move to next level
+    curr.swap(next);
+    width = next_w;
+    height = next_h;
+    ++level;
+  }
+
+  // Use trilinear sampling by default
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -84,25 +132,6 @@ void load_cubemap(int frame_idx, GLuint handle, const std::vector<std::string>& 
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
   }
-}
-
-void ClothSimulator::bindManagedTextures() const {
-  glActiveTexture(GL_TEXTURE0 + 1);
-  glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
-  glActiveTexture(GL_TEXTURE0 + 2);
-  glBindTexture(GL_TEXTURE_2D, m_gl_texture_2);
-  glActiveTexture(GL_TEXTURE0 + 3);
-  glBindTexture(GL_TEXTURE_2D, m_gl_texture_3);
-  glActiveTexture(GL_TEXTURE0 + 4);
-  glBindTexture(GL_TEXTURE_2D, m_gl_texture_4);
-  glActiveTexture(GL_TEXTURE0 + 5);
-  glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
-
-  // Keep unit 0 populated with valid fallback textures to avoid driver warnings
-  // and undefined sampler state in auxiliary UI passes.
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
-  glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
 }
 
 void ClothSimulator::load_textures() {
@@ -133,7 +162,13 @@ void ClothSimulator::load_textures() {
   
   load_cubemap(5, m_gl_cubemap_tex, cubemap_fnames);
   std::cout << "Loaded cubemap texture" << std::endl;
-  bindManagedTextures();
+
+  // Keep unit 0 populated with valid fallback textures. Apple's OpenGL
+  // driver can warn if a shader or UI pass touches sampler unit 0 before
+  // an explicit binding has been established there.
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
+  glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
 }
 
 void ClothSimulator::load_shaders() {
@@ -238,6 +273,14 @@ bool ClothSimulator::saveCelPreset(const std::string &path) {
   j["pattern_scale"] = m_cel_pattern_scale;
   j["pattern_radius"] = m_cel_pattern_radius;
   j["bands"] = m_cel_bands;
+  // Background and edge settings
+  j["background_color"] = {m_background_color[0], m_background_color[1], m_background_color[2], m_background_color[3]};
+  j["edge_enabled"] = m_edge_enabled;
+  j["edge_color"] = {m_edge_line_color[0], m_edge_line_color[1], m_edge_line_color[2], m_edge_line_color[3]};
+  j["edge_depth_threshold"] = m_edge_depth_threshold;
+  j["edge_normal_threshold"] = m_edge_normal_threshold;
+  j["edge_strength"] = m_edge_strength;
+  j["edge_thickness"] = m_edge_sample_distance;
   if (!m_cel_texture_path.empty()) j["texture_path"] = m_cel_texture_path;
 
   std::ofstream out(path);
@@ -290,23 +333,30 @@ bool ClothSimulator::loadCelPreset(const std::string &path) {
     if (!tex.empty()) reloadCelTexture(tex);
   }
 
-  if (m_refresh_cel_widgets) m_refresh_cel_widgets();
+  // Optional background and edge settings
+  if (has("background_color") && j["background_color"].is_array() && j["background_color"].size() >= 4) {
+    auto &arr = j["background_color"];
+    m_background_color = nanogui::Color((float)arr[0], (float)arr[1], (float)arr[2], (float)arr[3]);
+  }
+  if (has("edge_enabled")) m_edge_enabled = j["edge_enabled"];
+  if (has("edge_color") && j["edge_color"].is_array() && j["edge_color"].size() >= 4) {
+    auto &arr = j["edge_color"];
+    m_edge_line_color = nanogui::Color((float)arr[0], (float)arr[1], (float)arr[2], (float)arr[3]);
+  }
+  if (has("edge_depth_threshold")) m_edge_depth_threshold = j["edge_depth_threshold"];
+  if (has("edge_normal_threshold")) m_edge_normal_threshold = j["edge_normal_threshold"];
+  if (has("edge_strength")) m_edge_strength = j["edge_strength"];
+  if (has("edge_thickness")) m_edge_sample_distance = j["edge_thickness"];
+
+  if (m_refresh_widgets) m_refresh_widgets();
   std::cout << "Cel preset loaded: " << path << std::endl;
   return true;
 }
 
-bool ClothSimulator::reloadCelTexture(const std::string &path) {
-  Vector3D new_size = load_texture(1, m_gl_texture_1, path.c_str());
-  if (new_size.x <= 0 || new_size.y <= 0) {
-    std::cout << "Cel texture reload skipped: " << path << std::endl;
-    return false;
-  }
-
+void ClothSimulator::reloadCelTexture(const std::string &path) {
   m_cel_texture_path = path;
-  m_gl_texture_1_size = new_size;
-  bindManagedTextures();
+  load_texture(1, m_gl_texture_1, path.c_str());
   std::cout << "Cel texture reloaded: " << path << std::endl;
-  return true;
 }
 
 bool ClothSimulator::exportCelHLSL(const std::string &path) {
@@ -417,6 +467,21 @@ ClothSimulator::~ClothSimulator() {
   glDeleteTextures(1, &m_gl_texture_4);
   glDeleteTextures(1, &m_gl_cubemap_tex);
 
+  destroyFramebuffer();
+
+  if (m_fullscreen_vbo != 0) {
+      glDeleteBuffers(1, &m_fullscreen_vbo);
+      m_fullscreen_vbo = 0;
+  }
+  if (m_fullscreen_vao != 0) {
+      glDeleteVertexArrays(1, &m_fullscreen_vao);
+      m_fullscreen_vao = 0;
+  }
+  if (m_fullscreen_edge_shader) {
+      m_fullscreen_edge_shader->free();
+      m_fullscreen_edge_shader.reset();
+  }
+
   if (cloth) delete cloth;
   if (cp) delete cp;
   if (collision_objects) delete collision_objects;
@@ -437,6 +502,9 @@ void ClothSimulator::init() {
   // Initialize GUI
   screen->setSize(default_window_size);
   initGUI(screen);
+
+  // Reload default preset after GUI is built so widgets are refreshed
+  loadCelPreset(defaultCelPresetPath());
 
   // Initialize camera
 
@@ -476,6 +544,21 @@ void ClothSimulator::init() {
 
   camera.configure(camera_info, screen_w, screen_h);
   canonicalCamera.configure(camera_info, screen_w, screen_h);
+
+  // Initialize offscreen/post-process resources now that screen size is known.
+  try {
+    // Load fullscreen edge shader used in second pass
+    m_fullscreen_edge_shader = std::make_shared<GLShader>();
+    m_fullscreen_edge_shader->initFromFiles("FullscreenEdge",
+                                           m_project_root + "/shaders/fullscreen_edge.vert",
+                                           m_project_root + "/shaders/fullscreen_edge.frag");
+  } catch (const std::exception &e) {
+    std::cout << "Warning: could not load fullscreen edge shader: " << e.what() << std::endl;
+    m_fullscreen_edge_shader.reset();
+  }
+
+  initFramebuffer();
+  initFullscreenQuad();
 }
 
 bool ClothSimulator::isAlive() { return is_alive; }
@@ -492,74 +575,229 @@ void ClothSimulator::drawContents() {
   }
 
   // Bind the active shader
+  // --- Pass 1: render scene into offscreen FBO ---
+  if (m_offscreen_fbo != 0) {
+    glBindFramebuffer(GL_FRAMEBUFFER, m_offscreen_fbo);
+    // Ensure we render to full size attachments
+    glViewport(0, 0, screen_w, screen_h);
+    glEnable(GL_DEPTH_TEST);
+    // Clear color and depth
+    glClearColor(m_background_color[0], m_background_color[1], m_background_color[2], m_background_color[3]);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  const UserShader& active_shader = shaders[active_shader_idx];
+    // Set draw buffers in case multiple attachments are present
+    GLenum bufs[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, bufs);
 
-  GLShader &shader = *active_shader.nanogui_shader;
-  shader.bind();
-  bindManagedTextures();
+    // Bind the active shader and render the scene (same as before)
+    const UserShader& active_shader = shaders[active_shader_idx];
+    GLShader &shader = *active_shader.nanogui_shader;
+    shader.bind();
 
-  // Prepare the camera projection matrix
+    // Prepare the camera projection matrix
+    Matrix4f model; model.setIdentity();
+    Matrix4f view = getViewMatrix();
+    Matrix4f projection = getProjectionMatrix();
+    Matrix4f viewProjection = projection * view;
 
-  Matrix4f model;
-  model.setIdentity();
+    shader.setUniform("u_model", model);
+    shader.setUniform("u_view_projection", viewProjection);
 
-  Matrix4f view = getViewMatrix();
-  Matrix4f projection = getProjectionMatrix();
+    switch (active_shader.type_hint) {
+    case WIREFRAME:
+      shader.setUniform("u_color", color, false);
+      drawWireframe(shader);
+      break;
+    case NORMALS:
+      drawNormals(shader);
+      break;
+    case PHONG: {
+      Vector3D cam_pos = camera.position();
+      Vector3f cel_light_dir = m_cel_light_dir.normalized();
 
-  Matrix4f viewProjection = projection * view;
+      shader.setUniform("u_color", color, false);
+      shader.setUniform("u_cam_pos", Vector3f(cam_pos.x, cam_pos.y, cam_pos.z), false);
+      shader.setUniform("u_light_pos", Vector3f(0.5, 2, 2), false);
+      shader.setUniform("u_light_intensity", Vector3f(3, 3, 3), false);
+      shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
+      shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
+      shader.setUniform("u_cel_light_dir", cel_light_dir, false);
+      shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
+      shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
+      shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
+      shader.setUniform("u_cel_highlight_strength", m_cel_highlight_strength, false);
+      shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
+      shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
+      shader.setUniform("u_cel_bands", m_cel_bands, false);
+      shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
+      shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
+      shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
+      shader.setUniform("u_texture_4_size", Vector2f(m_gl_texture_4_size.x, m_gl_texture_4_size.y), false);
+      // Textures
+      shader.setUniform("u_texture_1", 1, false);
+      shader.setUniform("u_texture_2", 2, false);
+      shader.setUniform("u_texture_3", 3, false);
+      shader.setUniform("u_texture_4", 4, false);
 
-  shader.setUniform("u_model", model);
-  shader.setUniform("u_view_projection", viewProjection);
+      shader.setUniform("u_normal_scaling", m_normal_scaling, false);
+      shader.setUniform("u_height_scaling", m_height_scaling, false);
 
-  switch (active_shader.type_hint) {
-  case WIREFRAME:
-    shader.setUniform("u_color", color, false);
-    drawWireframe(shader);
-    break;
-  case NORMALS:
-    drawNormals(shader);
-    break;
-  case PHONG:
-  
-    // Others
-    Vector3D cam_pos = camera.position();
-    Vector3f cel_light_dir = m_cel_light_dir.normalized();
+      shader.setUniform("u_texture_cubemap", 5, false);
 
-    shader.setUniform("u_color", color, false);
-    shader.setUniform("u_cam_pos", Vector3f(cam_pos.x, cam_pos.y, cam_pos.z), false);
-    shader.setUniform("u_light_pos", Vector3f(0.5, 2, 2), false);
-    shader.setUniform("u_light_intensity", Vector3f(3, 3, 3), false);
-    shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
-    shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
-    shader.setUniform("u_cel_light_dir", cel_light_dir, false);
-    shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
-    shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
-    shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
-    shader.setUniform("u_cel_highlight_strength", m_cel_highlight_strength, false);
-    shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
-    shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
-    shader.setUniform("u_cel_bands", m_cel_bands, false);
-    shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
-    shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
-    shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
-    shader.setUniform("u_texture_4_size", Vector2f(m_gl_texture_4_size.x, m_gl_texture_4_size.y), false);
-    // Textures
-    shader.setUniform("u_texture_1", 1, false);
-    shader.setUniform("u_texture_2", 2, false);
-    shader.setUniform("u_texture_3", 3, false);
-    shader.setUniform("u_texture_4", 4, false);
-    
-    shader.setUniform("u_normal_scaling", m_normal_scaling, false);
-    shader.setUniform("u_height_scaling", m_height_scaling, false);
-    
-    shader.setUniform("u_texture_cubemap", 5, false);
-    drawPhong(shader);
-    break;
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
+
+      glActiveTexture(GL_TEXTURE2);
+      glBindTexture(GL_TEXTURE_2D, m_gl_texture_2);
+
+      glActiveTexture(GL_TEXTURE3);
+      glBindTexture(GL_TEXTURE_2D, m_gl_texture_3);
+
+      glActiveTexture(GL_TEXTURE4);
+      glBindTexture(GL_TEXTURE_2D, m_gl_texture_4);
+
+      glActiveTexture(GL_TEXTURE5);
+      glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
+      drawPhong(shader);
+    } break;
+    }
+
+    for (CollisionObject *co : *collision_objects) {
+      co->render(*active_shader.nanogui_shader);
+    }
+
+    // Done with offscreen pass
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  } else {
+    // Fallback: no offscreen FBO, render directly to default framebuffer as before
+    const UserShader& active_shader = shaders[active_shader_idx];
+    GLShader &shader = *active_shader.nanogui_shader;
+    shader.bind();
+
+    Matrix4f model; model.setIdentity();
+    Matrix4f view = getViewMatrix();
+    Matrix4f projection = getProjectionMatrix();
+    Matrix4f viewProjection = projection * view;
+    shader.setUniform("u_model", model);
+    shader.setUniform("u_view_projection", viewProjection);
+
+    switch (active_shader.type_hint) {
+    case WIREFRAME:
+      shader.setUniform("u_color", color, false);
+      drawWireframe(shader);
+      break;
+    case NORMALS:
+      drawNormals(shader);
+      break;
+    case PHONG:
+      {
+        Vector3D cam_pos = camera.position();
+        Vector3f cel_light_dir = m_cel_light_dir.normalized();
+
+        shader.setUniform("u_color", color, false);
+        shader.setUniform("u_cam_pos", Vector3f(cam_pos.x, cam_pos.y, cam_pos.z), false);
+        shader.setUniform("u_light_pos", Vector3f(0.5, 2, 2), false);
+        shader.setUniform("u_light_intensity", Vector3f(3, 3, 3), false);
+        shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
+        shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
+        shader.setUniform("u_cel_light_dir", cel_light_dir, false);
+        shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
+        shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
+        shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
+        shader.setUniform("u_cel_highlight_strength", m_cel_highlight_strength, false);
+        shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
+        shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
+        shader.setUniform("u_cel_bands", m_cel_bands, false);
+        shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
+        shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
+        shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
+        shader.setUniform("u_texture_4_size", Vector2f(m_gl_texture_4_size.x, m_gl_texture_4_size.y), false);
+        shader.setUniform("u_texture_1", 1, false);
+        shader.setUniform("u_texture_2", 2, false);
+        shader.setUniform("u_texture_3", 3, false);
+        shader.setUniform("u_texture_4", 4, false);
+        shader.setUniform("u_normal_scaling", m_normal_scaling, false);
+        shader.setUniform("u_height_scaling", m_height_scaling, false);
+        shader.setUniform("u_texture_cubemap", 5, false);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, m_gl_texture_2);
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, m_gl_texture_3);
+
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, m_gl_texture_4);
+
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
+        drawPhong(shader);
+      }
+      break;
+    }
+
+    for (CollisionObject *co : *collision_objects) {
+      co->render(*active_shader.nanogui_shader);
+    }
   }
 
-  for (CollisionObject *co : *collision_objects) {
-    co->render(shader);
+  // --- Pass 2: composite / edge post-process to default framebuffer ---
+  if (m_offscreen_fbo != 0) {
+    // If edge drawing is disabled, simply blit the color attachment to the
+    // default framebuffer. Otherwise run the fullscreen edge shader (if
+    // available) or fall back to blit.
+    if (!m_edge_enabled) {
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, m_offscreen_fbo);
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+      glReadBuffer(GL_COLOR_ATTACHMENT0);
+      glBlitFramebuffer(0, 0, screen_w, screen_h, 0, 0, screen_w, screen_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    } else if (m_fullscreen_edge_shader) {
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      glViewport(0, 0, screen_w, screen_h);
+      glDisable(GL_DEPTH_TEST);
+      // Clear default framebuffer color
+      glClearColor(m_background_color[0], m_background_color[1], m_background_color[2], m_background_color[3]);
+      glClear(GL_COLOR_BUFFER_BIT);
+
+      GLShader &edge = *m_fullscreen_edge_shader;
+      edge.bind();
+
+      // Bind G-buffer textures
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, m_scene_color_tex);
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, m_scene_normal_tex);
+      glActiveTexture(GL_TEXTURE2);
+      glBindTexture(GL_TEXTURE_2D, m_scene_depth_tex);
+
+      edge.setUniform("u_colorTex", 0, false);
+      edge.setUniform("u_normalTex", 1, false);
+      edge.setUniform("u_depthTex", 2, false);
+
+      edge.setUniform("u_edge_thickness", m_edge_sample_distance, false);
+      edge.setUniform("u_depth_threshold", m_edge_depth_threshold, false);
+      edge.setUniform("u_normal_threshold", m_edge_normal_threshold, false);
+      edge.setUniform("u_edge_strength", m_edge_strength, false);
+      edge.setUniform("u_edge_color", colorToVec3(m_edge_line_color), false);
+
+      drawFullscreenQuad();
+
+      // unbind textures
+      glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, 0);
+    } else {
+      // Fallback: no edge shader available -> blit color
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, m_offscreen_fbo);
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+      glReadBuffer(GL_COLOR_ATTACHMENT0);
+      glBlitFramebuffer(0, 0, screen_w, screen_h, 0, 0, screen_w, screen_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
   }
 }
 
@@ -692,6 +930,121 @@ void ClothSimulator::drawPhong(GLShader &shader) {
   shader.drawArray(GL_TRIANGLES, 0, num_tris * 3);
 }
 
+
+void ClothSimulator::initFramebuffer() {
+    destroyFramebuffer();
+
+    glGenFramebuffers(1, &m_offscreen_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_offscreen_fbo);
+
+    // Scene color texture
+    glGenTextures(1, &m_scene_color_tex);
+    glBindTexture(GL_TEXTURE_2D, m_scene_color_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, screen_w, screen_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_scene_color_tex, 0);
+
+    // Scene normal texture
+    glGenTextures(1, &m_scene_normal_tex);
+    glBindTexture(GL_TEXTURE_2D, m_scene_normal_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, screen_w, screen_h, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, m_scene_normal_tex, 0);
+
+    // Depth texture
+    glGenTextures(1, &m_scene_depth_tex);
+    glBindTexture(GL_TEXTURE_2D, m_scene_depth_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, screen_w, screen_h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_scene_depth_tex, 0);
+
+    GLenum bufs[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, bufs);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cout << "Offscreen framebuffer is not complete!" << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void ClothSimulator::destroyFramebuffer() {
+    if (m_scene_color_tex != 0) {
+        glDeleteTextures(1, &m_scene_color_tex);
+        m_scene_color_tex = 0;
+    }
+    if (m_scene_normal_tex != 0) {
+        glDeleteTextures(1, &m_scene_normal_tex);
+        m_scene_normal_tex = 0;
+    }
+    if (m_scene_depth_tex != 0) {
+        glDeleteTextures(1, &m_scene_depth_tex);
+        m_scene_depth_tex = 0;
+    }
+    if (m_offscreen_fbo != 0) {
+        glDeleteFramebuffers(1, &m_offscreen_fbo);
+        m_offscreen_fbo = 0;
+    }
+}
+
+void ClothSimulator::resizeFramebuffer(int width, int height) {
+    screen_w = width;
+    screen_h = height;
+    initFramebuffer();
+}
+
+void ClothSimulator::initFullscreenQuad() {
+    if (m_fullscreen_vao != 0) {
+        glDeleteVertexArrays(1, &m_fullscreen_vao);
+        m_fullscreen_vao = 0;
+    }
+    if (m_fullscreen_vbo != 0) {
+        glDeleteBuffers(1, &m_fullscreen_vbo);
+        m_fullscreen_vbo = 0;
+    }
+
+    float quadVertices[] = {
+        // position   // uv
+        -1.0f, -1.0f, 0.0f, 0.0f,
+         1.0f, -1.0f, 1.0f, 0.0f,
+         1.0f,  1.0f, 1.0f, 1.0f,
+
+        -1.0f, -1.0f, 0.0f, 0.0f,
+         1.0f,  1.0f, 1.0f, 1.0f,
+        -1.0f,  1.0f, 0.0f, 1.0f
+    };
+
+    glGenVertexArrays(1, &m_fullscreen_vao);
+    glGenBuffers(1, &m_fullscreen_vbo);
+
+    glBindVertexArray(m_fullscreen_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_fullscreen_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+void ClothSimulator::drawFullscreenQuad() {
+    glBindVertexArray(m_fullscreen_vao);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+}
 // ----------------------------------------------------------------------------
 // CAMERA CALCULATIONS
 //
@@ -865,11 +1218,12 @@ bool ClothSimulator::scrollCallbackEvent(double x, double y) {
 }
 
 bool ClothSimulator::resizeCallbackEvent(int width, int height) {
-  screen_w = width;
-  screen_h = height;
+    screen_w = width;
+    screen_h = height;
 
-  camera.set_screen_size(screen_w, screen_h);
-  return true;
+    camera.set_screen_size(screen_w, screen_h);
+    resizeFramebuffer(width, height);
+    return true;
 }
 
 void ClothSimulator::initGUI(Screen *screen) {
@@ -1066,6 +1420,9 @@ void ClothSimulator::initGUI(Screen *screen) {
     cb->setSelectedIndex(active_shader_idx);
   }
 
+  // Shared refresh callbacks for Appearance widgets (used to update UI after loading preset)
+  auto refreshes = std::make_shared<std::vector<std::function<void()>>>();
+
   // Shader Parameters
 
   new Label(window, "Color", "sans-bold");
@@ -1075,6 +1432,7 @@ void ClothSimulator::initGUI(Screen *screen) {
     cw->setColor(this->color);
     cw->setCallback(
         [this](const nanogui::Color &color) { this->color = color; });
+    refreshes->push_back([cw, this] { cw->setColor(this->color); });
   }
 
   new Label(window, "Parameters", "sans-bold");
@@ -1096,6 +1454,7 @@ void ClothSimulator::initGUI(Screen *screen) {
     fb->setValue(this->m_normal_scaling);
     fb->setSpinnable(true);
     fb->setCallback([this](float value) { this->m_normal_scaling = value; });
+    refreshes->push_back([fb, this] { fb->setValue((double)this->m_normal_scaling); });
 
     new Label(panel, "Height :", "sans-bold");
 
@@ -1106,6 +1465,7 @@ void ClothSimulator::initGUI(Screen *screen) {
     fb->setValue(this->m_height_scaling);
     fb->setSpinnable(true);
     fb->setCallback([this](float value) { this->m_height_scaling = value; });
+    refreshes->push_back([fb, this] { fb->setValue((double)this->m_height_scaling); });
   }
 
   // Cel shader live controls
@@ -1119,8 +1479,6 @@ void ClothSimulator::initGUI(Screen *screen) {
     layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
     layout->setSpacing(0, 8);
     panel->setLayout(layout);
-
-    auto refreshes = std::make_shared<std::vector<std::function<void()>>>();
 
     auto add_float = [panel, refreshes](const std::string &label, float *target,
                                         float minv, float maxv, float step) {
@@ -1144,7 +1502,7 @@ void ClothSimulator::initGUI(Screen *screen) {
     dark_picker->setFontSize(14);
     dark_picker->setCallback(
         [this](const nanogui::Color &c) { m_cel_dark_color = c; });
-    refreshes->push_back([this, dark_picker] { dark_picker->setColor(m_cel_dark_color); });
+    refreshes->push_back([dark_picker, this] { dark_picker->setColor(this->m_cel_dark_color); });
 
     new Label(panel, "Bright color :", "sans-bold");
     ColorPicker *bright_picker = new ColorPicker(panel, m_cel_bright_color);
@@ -1152,7 +1510,7 @@ void ClothSimulator::initGUI(Screen *screen) {
     bright_picker->setFontSize(14);
     bright_picker->setCallback(
         [this](const nanogui::Color &c) { m_cel_bright_color = c; });
-    refreshes->push_back([this, bright_picker] { bright_picker->setColor(m_cel_bright_color); });
+    refreshes->push_back([bright_picker, this] { bright_picker->setColor(this->m_cel_bright_color); });
 
     // Texture picker
     new Label(panel, "Pattern tex :", "sans-bold");
@@ -1168,22 +1526,20 @@ void ClothSimulator::initGUI(Screen *screen) {
       name_lbl->setFixedWidth(60);
       name_lbl->setFontSize(12);
 
+      // update filename label when preset loads
+      refreshes->push_back([name_lbl, this] {
+        std::string fname = this->m_cel_texture_path.empty() ? "texture_1.png" : this->m_cel_texture_path.substr(this->m_cel_texture_path.find_last_of("/\\") + 1);
+        name_lbl->setCaption(fname);
+      });
+
       Button *browse_btn = new Button(row, "Browse");
       browse_btn->setFontSize(12);
       browse_btn->setCallback([this, name_lbl] {
         std::string path = nanogui::file_dialog(
             {{"png","PNG"}, {"jpg","JPEG"}, {"bmp","BMP"}, {"tga","TGA"}}, false);
         if (path.empty()) return;
-        if (reloadCelTexture(path)) {
-          std::string fname = path.substr(path.find_last_of("/\\") + 1);
-          name_lbl->setCaption(fname);
-        }
-      });
-
-      refreshes->push_back([this, name_lbl] {
-        std::string fname = m_cel_texture_path.empty()
-            ? "texture_1.png"
-            : m_cel_texture_path.substr(m_cel_texture_path.find_last_of("/\\") + 1);
+        reloadCelTexture(path);
+        std::string fname = path.substr(path.find_last_of("/\\") + 1);
         name_lbl->setCaption(fname);
       });
     }
@@ -1192,7 +1548,7 @@ void ClothSimulator::initGUI(Screen *screen) {
     add_float("Bright thresh :", &m_cel_bright_threshold, 0.0f, 1.0f, 0.02f);
     add_float("Shadow str :", &m_cel_shadow_strength, 0.0f, 1.0f, 0.05f);
     add_float("Highlight str :", &m_cel_highlight_strength, 0.0f, 2.0f, 0.05f);
-    add_float("Pattern scale :", &m_cel_pattern_scale, 0.05f, 30.0f, 0.5f);
+    add_float("Pattern scale :", &m_cel_pattern_scale, 0.05f, 10.0f, 0.5f);
     add_float("Bands :", &m_cel_bands, 1.0f, 16.0f, 1.0f);
 
     auto make_axis = [panel, refreshes](const std::string &label, float *target) {
@@ -1211,12 +1567,65 @@ void ClothSimulator::initGUI(Screen *screen) {
     make_axis("Light dir y :", &m_cel_light_dir.y());
     make_axis("Light dir z :", &m_cel_light_dir.z());
 
-    m_refresh_cel_widgets = [refreshes] {
-      for (auto &cb : *refreshes) cb();
-    };
+    // register refresh callbacks for cel params
+    refreshes->push_back([this] { /* placeholder to trigger updated values */ });
   }
 
   // Cel preset save/load buttons
+
+  // Edge controls
+  new Label(window, "Edge", "sans-bold");
+  {
+    Widget *panel = new Widget(window);
+    GridLayout *layout =
+        new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
+    layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
+    layout->setSpacing(0, 10);
+    panel->setLayout(layout);
+
+    new Label(panel, "Thickness :", "sans-bold");
+    FloatBox<float> *fb = new FloatBox<float>(panel);
+    fb->setEditable(true);
+    fb->setFixedSize(Vector2i(100, 20));
+    fb->setFontSize(14);
+    fb->setValue(m_edge_sample_distance);
+    fb->setSpinnable(true);
+    fb->setCallback([this](float value) { m_edge_sample_distance = value; });
+
+    // expose background color in same panel? No, add separate control below.
+
+    new Label(panel, "Strength :", "sans-bold");
+    fb = new FloatBox<float>(panel);
+    fb->setEditable(true);
+    fb->setFixedSize(Vector2i(100, 20));
+    fb->setFontSize(14);
+    fb->setValue(m_edge_strength);
+    fb->setSpinnable(true);
+    fb->setCallback([this](float value) { m_edge_strength = value; });
+
+    new Label(panel, "Color :", "sans-bold");
+    ColorPicker *edge_picker = new ColorPicker(panel, m_edge_line_color);
+    edge_picker->setFixedSize(Vector2i(100, 20));
+    edge_picker->setFontSize(14);
+    edge_picker->setCallback([this](const nanogui::Color &c) { m_edge_line_color = c; });
+  }
+
+  // Background color picker
+  new Label(window, "Background", "sans-bold");
+  {
+    Widget *panel = new Widget(window);
+    GridLayout *layout = new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
+    layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
+    layout->setSpacing(0, 10);
+    panel->setLayout(layout);
+
+    new Label(panel, "Color :", "sans-bold");
+    ColorPicker *bg_picker = new ColorPicker(panel, m_background_color);
+    bg_picker->setFixedSize(Vector2i(100, 20));
+    bg_picker->setFontSize(14);
+    bg_picker->setCallback([this](const nanogui::Color &c) { m_background_color = c; });
+    refreshes->push_back([bg_picker, this] { bg_picker->setColor(this->m_background_color); });
+  }
 
   {
     Widget *panel = new Widget(window);
@@ -1242,12 +1651,27 @@ void ClothSimulator::initGUI(Screen *screen) {
       if (!path.empty()) loadCelPreset(path);
     });
 
+    // Update UI when default preset is reloaded
+    refreshes->push_back([this] {
+      if (m_refresh_widgets) m_refresh_widgets();
+    });
+
     Button *hlsl_btn = new Button(panel, "Export HLSL");
     hlsl_btn->setFontSize(14);
     hlsl_btn->setCallback([this] {
       std::string path = nanogui::file_dialog(
           {{"shader", "Unity HLSL shader"}}, true);
       if (!path.empty()) exportCelHLSL(path);
+    });
+    
+    // Edge enable toggle
+    Button *edge_btn = new Button(panel, "Edge: On");
+    edge_btn->setFlags(Button::ToggleButton);
+    edge_btn->setPushed(m_edge_enabled);
+    edge_btn->setFontSize(14);
+    edge_btn->setChangeCallback([this, edge_btn](bool state) {
+      m_edge_enabled = state;
+      edge_btn->setCaption(state ? "Edge: On" : "Edge: Off");
     });
   }
 }

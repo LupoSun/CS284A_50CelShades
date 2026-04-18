@@ -46,6 +46,32 @@ private:
   void load_shaders();
   void load_textures();
   
+  // Two-pass post-processing (offscreen) resources
+  void initFramebuffer();
+  void destroyFramebuffer();
+  void resizeFramebuffer(int width, int height);
+
+  void initFullscreenQuad();
+  void drawFullscreenQuad();
+
+  GLuint m_offscreen_fbo = 0;            // offscreen framebuffer
+  GLuint m_scene_color_tex = 0;          // color (RGBA) texture
+  GLuint m_scene_normal_tex = 0;         // normal (RGB) texture
+  GLuint m_scene_depth_tex = 0;          // depth texture
+
+  GLuint m_fullscreen_vao = 0;           // fullscreen quad VAO
+  GLuint m_fullscreen_vbo = 0;           // fullscreen quad VBO
+
+  std::shared_ptr<GLShader> m_fullscreen_edge_shader; // separate fullscreen edge shader
+
+  // Edge/outline parameters (tweakable)
+  nanogui::Color m_edge_line_color = nanogui::Color(0.0f, 0.0f, 0.0f, 1.0f);
+  float m_edge_depth_threshold = 0.01f;
+  float m_edge_normal_threshold = 0.2f;
+  float m_edge_strength = 1.0f;
+  float m_edge_sample_distance = 1.0f; // in texels
+  bool m_edge_enabled = true;
+  
   // File management
   
   std::string m_project_root;
@@ -91,6 +117,7 @@ private:
 
   double m_normal_scaling = 2.0;
   double m_height_scaling = 0.1;
+  nanogui::Color m_background_color = nanogui::Color(0.85f, 0.85f, 0.85f, 1.0f);
 
   // Cel shader parameters (live-tweakable via Appearance GUI)
 
@@ -101,19 +128,18 @@ private:
   float m_cel_bright_threshold = 0.95f;
   float m_cel_shadow_strength = 0.9f;
   float m_cel_highlight_strength = 0.18f;
-  float m_cel_pattern_scale = 1.0f;
+  float m_cel_pattern_scale = 2.0f;
   float m_cel_pattern_radius = 0.18f;
-  float m_cel_bands = 4.0f;
+  float m_cel_bands = 1.0f;
   std::string m_cel_texture_path;
 
-  std::function<void()> m_refresh_cel_widgets;
+  std::function<void()> m_refresh_widgets;
 
   std::string defaultCelPresetPath() const;
   bool saveCelPreset(const std::string &path);
   bool loadCelPreset(const std::string &path);
   bool exportCelHLSL(const std::string &path);
-  bool reloadCelTexture(const std::string &path);
-  void bindManagedTextures() const;
+  void reloadCelTexture(const std::string &path);
 
   // Camera attributes
 
