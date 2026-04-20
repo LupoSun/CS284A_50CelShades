@@ -266,6 +266,9 @@ bool ClothSimulator::saveCelPreset(const std::string &path) {
                        m_cel_bright_color[2], m_cel_bright_color[3]};
   j["light_dir"] = {m_cel_light_dir.x(), m_cel_light_dir.y(),
                     m_cel_light_dir.z()};
+  j["light_pos"] = {m_cel_light_pos.x(), m_cel_light_pos.y(),
+                    m_cel_light_pos.z()};
+  j["light_type"] = m_cel_light_type;
   j["dark_threshold"] = m_cel_dark_threshold;
   j["bright_threshold"] = m_cel_bright_threshold;
   j["shadow_strength"] = m_cel_shadow_strength;
@@ -321,6 +324,8 @@ bool ClothSimulator::loadCelPreset(const std::string &path) {
   if (has("dark_color")) readColor(j["dark_color"], m_cel_dark_color);
   if (has("bright_color")) readColor(j["bright_color"], m_cel_bright_color);
   if (has("light_dir")) readVec3(j["light_dir"], m_cel_light_dir);
+  if (has("light_pos")) readVec3(j["light_pos"], m_cel_light_pos);
+  if (has("light_type")) m_cel_light_type = j["light_type"];
   if (has("dark_threshold")) m_cel_dark_threshold = j["dark_threshold"];
   if (has("bright_threshold")) m_cel_bright_threshold = j["bright_threshold"];
   if (has("shadow_strength")) m_cel_shadow_strength = j["shadow_strength"];
@@ -386,6 +391,11 @@ bool ClothSimulator::exportCelHLSL(const std::string &path) {
   s << "        _LightDir (\"Light Direction\", Vector) = ("
     << m_cel_light_dir.x() << ", " << m_cel_light_dir.y() << ", "
     << m_cel_light_dir.z() << ", 0)\n";
+  s << "        _LightPos (\"Light Position\", Vector) = ("
+    << m_cel_light_pos.x() << ", " << m_cel_light_pos.y() << ", "
+    << m_cel_light_pos.z() << ", 0)\n";
+  s << "        _LightType (\"Light Type (0=Dir 1=Point)\", Float) = "
+    << m_cel_light_type << "\n";
   s << "        _DarkThreshold (\"Dark Threshold\", Range(0,1)) = " << m_cel_dark_threshold << "\n";
   s << "        _BrightThreshold (\"Bright Threshold\", Range(0,1)) = " << m_cel_bright_threshold << "\n";
   s << "        _ShadowStrength (\"Shadow Strength\", Range(0,1)) = " << m_cel_shadow_strength << "\n";
@@ -539,8 +549,8 @@ void ClothSimulator::init() {
   canonicalCamera.place(target, acos(c_dir.y), atan2(c_dir.x, c_dir.z),
                         view_distance, min_view_distance, max_view_distance);
 
-  screen_w = default_window_size(0);
-  screen_h = default_window_size(1);
+  // Query the actual framebuffer size (accounts for Retina/HiDPI scaling)
+  glfwGetFramebufferSize(screen->glfwWindow(), &screen_w, &screen_h);
 
   camera.configure(camera_info, screen_w, screen_h);
   canonicalCamera.configure(camera_info, screen_w, screen_h);
@@ -572,6 +582,25 @@ void ClothSimulator::drawContents() {
     for (int i = 0; i < simulation_steps; i++) {
       cloth->simulate(frames_per_sec, simulation_steps, cp, external_accelerations, collision_objects);
     }
+  }
+
+  // Animate light rotation around the Y axis
+  if (m_light_rotate) {
+    float t = (float)glfwGetTime() * m_light_rotate_speed;
+    float cos_t = std::cos(t);
+    float sin_t = std::sin(t);
+
+    float r_dir = std::sqrt(m_cel_light_dir.x() * m_cel_light_dir.x() +
+                            m_cel_light_dir.z() * m_cel_light_dir.z());
+    if (r_dir < 1e-4f) r_dir = 1.0f;
+    m_cel_light_dir.x() = r_dir * cos_t;
+    m_cel_light_dir.z() = r_dir * sin_t;
+
+    float r_pos = std::sqrt(m_cel_light_pos.x() * m_cel_light_pos.x() +
+                            m_cel_light_pos.z() * m_cel_light_pos.z());
+    if (r_pos < 1e-4f) r_pos = 1.0f;
+    m_cel_light_pos.x() = r_pos * cos_t;
+    m_cel_light_pos.z() = r_pos * sin_t;
   }
 
   // Bind the active shader
@@ -622,6 +651,8 @@ void ClothSimulator::drawContents() {
       shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
       shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
       shader.setUniform("u_cel_light_dir", cel_light_dir, false);
+      shader.setUniform("u_cel_light_pos", m_cel_light_pos, false);
+      shader.setUniform("u_cel_light_type", (float)m_cel_light_type, false);
       shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
       shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
       shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
@@ -629,6 +660,7 @@ void ClothSimulator::drawContents() {
       shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
       shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
       shader.setUniform("u_cel_bands", m_cel_bands, false);
+      shader.setUniform("u_cel_flat", 0.0f, false);
       shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
       shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
       shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
@@ -666,6 +698,15 @@ void ClothSimulator::drawContents() {
       co->render(*active_shader.nanogui_shader);
     }
 
+    if (m_cel_light_type == 1) {
+      shader.setUniform("u_color", nanogui::Color(1.0f, 0.9f, 0.2f, 1.0f), false);
+      shader.setUniform("u_cel_flat", 1.0f, false);
+      Vector3D lp(m_cel_light_pos.x(), m_cel_light_pos.y(), m_cel_light_pos.z());
+      m_light_sphere.draw_sphere(shader, lp, 0.06);
+      shader.setUniform("u_cel_flat", 0.0f, false);
+      shader.setUniform("u_color", color, false);
+    }
+
     // Done with offscreen pass
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   } else {
@@ -701,6 +742,8 @@ void ClothSimulator::drawContents() {
         shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
         shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
         shader.setUniform("u_cel_light_dir", cel_light_dir, false);
+        shader.setUniform("u_cel_light_pos", m_cel_light_pos, false);
+        shader.setUniform("u_cel_light_type", (float)m_cel_light_type, false);
         shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
         shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
         shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
@@ -708,6 +751,7 @@ void ClothSimulator::drawContents() {
         shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
         shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
         shader.setUniform("u_cel_bands", m_cel_bands, false);
+        shader.setUniform("u_cel_flat", 0.0f, false);
         shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
         shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
         shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
@@ -741,6 +785,15 @@ void ClothSimulator::drawContents() {
 
     for (CollisionObject *co : *collision_objects) {
       co->render(*active_shader.nanogui_shader);
+    }
+
+    if (m_cel_light_type == 1) {
+      shader.setUniform("u_color", nanogui::Color(1.0f, 0.9f, 0.2f, 1.0f), false);
+      shader.setUniform("u_cel_flat", 1.0f, false);
+      Vector3D lp(m_cel_light_pos.x(), m_cel_light_pos.y(), m_cel_light_pos.z());
+      m_light_sphere.draw_sphere(shader, lp, 0.06);
+      shader.setUniform("u_cel_flat", 0.0f, false);
+      shader.setUniform("u_color", color, false);
     }
   }
 
@@ -1205,6 +1258,29 @@ bool ClothSimulator::keyCallbackEvent(int key, int scancode, int action,
     }
   }
 
+  double pan_speed = canonical_view_distance * 50.0;
+
+  if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+    switch (key) {
+    case GLFW_KEY_W:
+    case GLFW_KEY_UP:
+      camera.move_by(0, pan_speed, canonical_view_distance);
+      break;
+    case GLFW_KEY_S:
+    case GLFW_KEY_DOWN:
+      camera.move_by(0, -pan_speed, canonical_view_distance);
+      break;
+    case GLFW_KEY_A:
+    case GLFW_KEY_LEFT:
+      camera.move_by(-pan_speed, 0, canonical_view_distance);
+      break;
+    case GLFW_KEY_D:
+    case GLFW_KEY_RIGHT:
+      camera.move_by(pan_speed, 0, canonical_view_distance);
+      break;
+    }
+  }
+
   return true;
 }
 
@@ -1563,12 +1639,40 @@ void ClothSimulator::initGUI(Screen *screen) {
       fb->setCallback([target](float v) { *target = v; });
       refreshes->push_back([fb, target] { fb->setValue(*target); });
     };
+    new Label(panel, "Light type :", "sans-bold");
+    ComboBox *light_type_cb = new ComboBox(panel, {"Directional", "Point"});
+    light_type_cb->setSelectedIndex(m_cel_light_type);
+    light_type_cb->setFontSize(14);
+    light_type_cb->setFixedSize(Vector2i(100, 20));
+    light_type_cb->setCallback([this](int idx) { m_cel_light_type = idx; });
+    refreshes->push_back([light_type_cb, this] { light_type_cb->setSelectedIndex(m_cel_light_type); });
+
     make_axis("Light dir x :", &m_cel_light_dir.x());
     make_axis("Light dir y :", &m_cel_light_dir.y());
     make_axis("Light dir z :", &m_cel_light_dir.z());
 
-    // register refresh callbacks for cel params
-    refreshes->push_back([this] { /* placeholder to trigger updated values */ });
+    make_axis("Light pos x :", &m_cel_light_pos.x());
+    make_axis("Light pos y :", &m_cel_light_pos.y());
+    make_axis("Light pos z :", &m_cel_light_pos.z());
+
+    new Label(panel, "Rotate light :", "sans-bold");
+    {
+      Button *rot_btn = new Button(panel, "Off");
+      rot_btn->setFlags(Button::ToggleButton);
+      rot_btn->setPushed(m_light_rotate);
+      rot_btn->setFixedSize(Vector2i(100, 20));
+      rot_btn->setFontSize(14);
+      rot_btn->setChangeCallback([this, rot_btn](bool state) {
+        m_light_rotate = state;
+        rot_btn->setCaption(state ? "On" : "Off");
+      });
+      refreshes->push_back([rot_btn, this] {
+        rot_btn->setPushed(m_light_rotate);
+        rot_btn->setCaption(m_light_rotate ? "On" : "Off");
+      });
+    }
+
+    make_axis("Rotate speed :", &m_light_rotate_speed);
   }
 
   // Cel preset save/load buttons

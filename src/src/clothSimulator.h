@@ -9,6 +9,7 @@
 #include "camera.h"
 #include "cloth.h"
 #include "collision/collisionObject.h"
+#include "misc/sphere_drawing.h"
 
 using namespace nanogui;
 
@@ -124,6 +125,9 @@ private:
   nanogui::Color m_cel_dark_color = nanogui::Color(0.38f, 0.16f, 0.18f, 1.0f);
   nanogui::Color m_cel_bright_color = nanogui::Color(1.0f, 0.85f, 0.78f, 1.0f);
   nanogui::Vector3f m_cel_light_dir = nanogui::Vector3f(0.5f, 2.0f, 2.0f);
+  nanogui::Vector3f m_cel_light_pos = nanogui::Vector3f(0.5f, 2.0f, 2.0f);
+  int m_cel_light_type = 0; // 0 = directional, 1 = point
+  CGL::Misc::SphereMesh m_light_sphere{10, 10};
   float m_cel_dark_threshold = 0.42f;
   float m_cel_bright_threshold = 0.95f;
   float m_cel_shadow_strength = 0.9f;
@@ -132,6 +136,8 @@ private:
   float m_cel_pattern_radius = 0.18f;
   float m_cel_bands = 1.0f;
   std::string m_cel_texture_path;
+  bool m_light_rotate = false;
+  float m_light_rotate_speed = 1.0f;
 
   std::function<void()> m_refresh_widgets;
 
@@ -184,7 +190,7 @@ private:
 
   bool is_alive = true;
 
-  Vector2i default_window_size = Vector2i(1024, 800);
+  Vector2i default_window_size = Vector2i(1280, 1000);
 };
 
 struct UserShader {

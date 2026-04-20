@@ -5,6 +5,8 @@ uniform vec4 u_color;
 uniform vec3 u_cel_dark_color;
 uniform vec3 u_cel_bright_color;
 uniform vec3 u_cel_light_dir;
+uniform vec3 u_cel_light_pos;
+uniform float u_cel_light_type; // 0 = directional, 1 = point
 
 uniform float u_cel_dark_threshold;
 uniform float u_cel_bright_threshold;
@@ -13,6 +15,7 @@ uniform float u_cel_highlight_strength;
 uniform float u_cel_pattern_scale;
 uniform float u_cel_pattern_radius;
 uniform float u_cel_bands;
+uniform float u_cel_flat; // when > 0.5, output u_color directly (unlit)
 
 uniform sampler2D u_texture_1;
 
@@ -25,7 +28,16 @@ layout(location = 1) out vec4 out_normal;
 
 void main() {
   vec3 N = normalize(v_normal.xyz);
-  vec3 L = normalize(u_cel_light_dir);
+
+  if (u_cel_flat > 0.5) {
+    out_color = u_color;
+    out_normal = vec4(N * 0.5 + 0.5, 1.0);
+    return;
+  }
+
+  vec3 L = (u_cel_light_type > 0.5)
+           ? normalize(u_cel_light_pos - v_position.xyz)
+           : normalize(u_cel_light_dir);
 
   vec2 uv = v_uv * u_cel_pattern_scale;
   vec4 tri_pattern = texture(u_texture_1, uv);

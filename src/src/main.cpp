@@ -30,10 +30,12 @@ using json = nlohmann::json;
 #define msg(s) cerr << "[ClothSim] " << s << endl;
 
 const string SPHERE = "sphere";
+const string SPHERES = "spheres";
 const string PLANE = "plane";
+const string PLANES = "planes";
 const string CLOTH = "cloth";
 
-const unordered_set<string> VALID_KEYS = {SPHERE, PLANE, CLOTH};
+const unordered_set<string> VALID_KEYS = {SPHERE, SPHERES, PLANE, PLANES, CLOTH};
 
 ClothSimulator *app = nullptr;
 GLFWwindow *window = nullptr;
@@ -64,7 +66,7 @@ void applyWindowHints(int major, int minor) {
 
 GLFWwindow *createWindowForVersion(int major, int minor) {
   applyWindowHints(major, minor);
-  return glfwCreateWindow(800, 800, "Cloth Simulator", nullptr, nullptr);
+  return glfwCreateWindow(1280, 1000, "Cloth Simulator", nullptr, nullptr);
 }
 
 } // namespace
@@ -358,7 +360,74 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
 
       Sphere *s = new Sphere(origin, radius, friction, sphere_num_lat, sphere_num_lon);
       objects->push_back(s);
-    } else { // PLANE
+    } else if (key == SPHERES) {
+      for (auto &sphere_obj : object) {
+        Vector3D origin;
+        double radius, friction;
+
+        auto it_origin = sphere_obj.find("origin");
+        if (it_origin != sphere_obj.end()) {
+          vector<double> vec_origin = *it_origin;
+          origin = Vector3D(vec_origin[0], vec_origin[1], vec_origin[2]);
+        } else {
+          incompleteObjectError("sphere", "origin");
+        }
+
+        auto it_radius = sphere_obj.find("radius");
+        if (it_radius != sphere_obj.end()) {
+          radius = *it_radius;
+        } else {
+          incompleteObjectError("sphere", "radius");
+        }
+
+        auto it_friction = sphere_obj.find("friction");
+        if (it_friction != sphere_obj.end()) {
+          friction = *it_friction;
+        } else {
+          incompleteObjectError("sphere", "friction");
+        }
+
+        Sphere *s = new Sphere(origin, radius, friction, sphere_num_lat, sphere_num_lon);
+        objects->push_back(s);
+      }
+    } else if (key == PLANES) {
+      for (auto &plane_obj : object) {
+        Vector3D point, normal;
+        double friction;
+
+        auto it_point = plane_obj.find("point");
+        if (it_point != plane_obj.end()) {
+          vector<double> vec_point = *it_point;
+          point = Vector3D(vec_point[0], vec_point[1], vec_point[2]);
+        } else {
+          incompleteObjectError("plane", "point");
+        }
+
+        auto it_normal = plane_obj.find("normal");
+        if (it_normal != plane_obj.end()) {
+          vector<double> vec_normal = *it_normal;
+          normal = Vector3D(vec_normal[0], vec_normal[1], vec_normal[2]);
+        } else {
+          incompleteObjectError("plane", "normal");
+        }
+
+        auto it_friction = plane_obj.find("friction");
+        if (it_friction != plane_obj.end()) {
+          friction = *it_friction;
+        } else {
+          incompleteObjectError("plane", "friction");
+        }
+
+        double planeLength = 4.0;
+        auto it_length = plane_obj.find("length");
+        if (it_length != plane_obj.end()) {
+          planeLength = *it_length;
+        }
+
+        Plane *p = new Plane(point, normal, friction, planeLength);
+        objects->push_back(p);
+      }
+    } else { // PLANE (single)
       Vector3D point, normal;
       double friction;
 
@@ -385,7 +454,13 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
         incompleteObjectError("plane", "friction");
       }
 
-      Plane *p = new Plane(point, normal, friction);
+      double planeLength = 4.0;
+      auto it_length = object.find("length");
+      if (it_length != object.end()) {
+        planeLength = *it_length;
+      }
+
+      Plane *p = new Plane(point, normal, friction, planeLength);
       objects->push_back(p);
     }
   }
