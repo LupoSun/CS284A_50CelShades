@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fifty Shades of Cel – Milestone Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:   #003262;
+      --gold:   #FDB515;
+      --light:  #f5f7fa;
+      --white:  #ffffff;
+      --text:   #1a1a2e;
+      --muted:  #5a5a72;
+      --border: #dde1e9;
+      --radius: 8px;
+      --max-w:  900px;
+    }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--light);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--blue) 0%, #004a8f 100%);
+      color: var(--white);
+      text-align: center;
+      padding: 3.5rem 1.5rem 2.5rem;
+    }
+
+    header .course-tag {
+      display: inline-block;
+      background: var(--gold);
+      color: var(--blue);
+      font-weight: 700;
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.85rem;
+      border-radius: 999px;
+      margin-bottom: 1.2rem;
+    }
+
+    header h1 {
+      font-size: clamp(2.2rem, 6vw, 3.4rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    header .subtitle {
+      font-size: 1.1rem;
+      opacity: 0.85;
+      margin-bottom: 1.6rem;
+    }
+
+    .team-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem 1.2rem;
+      margin-top: 0.5rem;
+    }
+
+    .team-grid .member {
+      font-size: 0.95rem;
+      opacity: 0.9;
+    }
+
+    .team-grid .member a {
+      color: var(--gold);
+      text-decoration: none;
+    }
+
+    .team-grid .member a:hover { text-decoration: underline; }
+
+    nav {
+      background: var(--white);
+      border-bottom: 2px solid var(--gold);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    nav ul {
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0;
+      max-width: var(--max-w);
+      margin: 0 auto;
+    }
+
+    nav ul li a {
+      display: block;
+      padding: 0.85rem 1.2rem;
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    nav ul li a:hover {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    main {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    section { margin-bottom: 3rem; }
+    section:last-child { margin-bottom: 0; }
+
+    h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--blue);
+      padding-bottom: 0.4rem;
+      border-bottom: 3px solid var(--gold);
+      margin-bottom: 1.2rem;
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--blue);
+      margin: 1.4rem 0 0.5rem;
+    }
+
+    p { margin-bottom: 0.9rem; }
+    p:last-child { margin-bottom: 0; }
+
+    ul, ol {
+      padding-left: 1.5rem;
+      margin-bottom: 0.9rem;
+    }
+
+    li { margin-bottom: 0.3rem; }
+
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.4rem 1.6rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    /* figures */
+    figure {
+      text-align: center;
+      margin: 1.5rem 0;
+    }
+
+    figure img {
+      max-width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    figcaption {
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-top: 0.6rem;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .img-row {
+      display: grid;
+      gap: 0.75rem;
+      margin: 1.2rem 0;
+    }
+
+    .img-row-2 { grid-template-columns: 1fr 1fr; }
+    .img-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+    .img-row img {
+      width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      object-fit: cover;
+    }
+
+    /* video placeholder */
+    .video-placeholder {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #e8edf5;
+      border-radius: var(--radius);
+      border: 2px dashed var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .video-placeholder svg {
+      width: 3rem;
+      height: 3rem;
+      opacity: 0.4;
+    }
+
+    /* progress badges */
+    .status-done {
+      display: inline-block;
+      background: #d1fae5;
+      color: #065f46;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      margin-left: 0.4rem;
+      vertical-align: middle;
+    }
+
+    .status-planned {
+      display: inline-block;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      margin-left: 0.4rem;
+      vertical-align: middle;
+    }
+
+    /* references */
+    .ref-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .ref-list li {
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.92rem;
+    }
+
+    .ref-list li:last-child { border-bottom: none; }
+    .ref-list a { color: var(--blue); }
+    .ref-list a:hover { color: #004a8f; }
+
+    /* links nav */
+    .links-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.2rem;
+    }
+
+    .links-bar a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--blue);
+      color: var(--white);
+      padding: 0.5rem 1.1rem;
+      border-radius: var(--radius);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+
+    .links-bar a:hover { background: #004a8f; }
+    .links-bar a.secondary {
+      background: var(--white);
+      color: var(--blue);
+      border: 1.5px solid var(--blue);
+    }
+    .links-bar a.secondary:hover { background: var(--light); }
+
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      background: var(--white);
+    }
+
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 600px) {
+      .img-row-2, .img-row-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="course-tag">CS284A · Spring 2026 · UC Berkeley</span>
+  <h1>Fifty Shades of Cel</h1>
+  <p class="subtitle">Milestone Report</p>
+  <div class="team-grid">
+    <span class="member">Kevin Frans</span>
+    <span class="member">·</span>
+    <span class="member">Qijun Li</span>
+    <span class="member">·</span>
+    <span class="member">Shaoyi Wang</span>
+    <span class="member">·</span>
+    <span class="member">Tao Sun</span>
+  </div>
+  <div class="links-bar" style="justify-content:center; margin-top:1.4rem;">
+    <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">
+      GitHub Repository
+    </a>
+    <a href="index.html" class="secondary">Proposal</a>
+  </div>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#abstract">Abstract</a></li>
+    <li><a href="#approach">Technical Approach</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#evaluation">Evaluation Plan</a></li>
+    <li><a href="#progress">Updated Plan</a></li>
+    <li><a href="#video">Video</a></li>
+    <li><a href="#references">References</a></li>
+  </ul>
+</nav>
+
+<main>
+
+  <!-- Abstract -->
+  <section id="abstract">
+    <h2>Abstract</h2>
+    <div class="card">
+      <p>
+        We present the milestone progress for <em>Fifty Shades of Cel</em>, a real-time
+        non-photorealistic rendering pipeline for 2D/3D hybrid cel shading. Built on top of the
+        HW4 cloth simulator's OpenGL framework, our system implements a <strong>two-pass rendering
+        pipeline</strong>: a cel shading pass that computes quantized lighting bands with pattern
+        textures, followed by a fullscreen post-process edge pass that detects silhouettes and
+        feature lines from depth and normal buffers. We also provide a live GUI for interactive
+        parameter tuning and shader export to Unity HLSL.
+      </p>
+    </div>
+  </section>
+
+  <!-- Technical Approach -->
+  <section id="approach">
+    <h2>Technical Approach</h2>
+
+    <p>
+      Our implementation is organized as a two-pass rendering pipeline with interactive parameter
+      control.
+    </p>
+
+    <h3>Rendering Pipeline Overview</h3>
+    <p>
+      In the <strong>first pass</strong>, the scene is rendered into an offscreen framebuffer (FBO)
+      that stores color, normal, and depth buffers using the cel shader. In the
+      <strong>second pass</strong>, a fullscreen edge shader reads these buffers and composites
+      detected outlines over the cel-shaded result.
+    </p>
+
+    <h3>Cel Shader</h3>
+    <p>
+      The cel fragment shader performs the main toon-shading computation. It first samples a
+      pattern texture in UV space, tiled by a configurable scale parameter. It then computes
+      <em>N·L</em> from the world-space normal and light direction, remaps this lighting value
+      using a dark threshold, and quantizes it into discrete shadow bands using
+      <code>floor()</code>. The shader applies the pattern texture to dark bands, modulated by a
+      shadow-strength parameter, and adds a highlight band above a separate bright threshold. The
+      pass outputs both the final cel-shaded color and an encoded normal buffer for the later edge
+      pass.
+    </p>
+
+    <h3>Edge Detection</h3>
+    <p>
+      The fullscreen edge shader runs as a post-processing pass over the FBO outputs. For each
+      pixel, it samples neighboring depth values to detect outer silhouettes and
+      object-background boundaries, and samples neighboring normals to detect internal feature
+      lines such as folds and creases. The resulting edge mask is composited over the color buffer
+      from the first pass.
+    </p>
+
+    <h3>GUI and Parameter Control</h3>
+    <p>
+      All cel-shading parameters are exposed through a live GUI with per-frame updates. These
+      include base, dark, and bright colors; dark and bright thresholds; shadow strength; highlight
+      strength; number of bands; pattern texture scale; and light direction. The current
+      implementation also supports saving and loading cel-shading presets and exporting tuned
+      parameters as Unity HLSL shader files.
+    </p>
+
+    <h3>Scene and Lighting Support</h3>
+    <p>
+      The pipeline supports rendering multiple overlapping objects with correct depth compositing.
+      Rigid geometry (spheres, planes, cubes constructed from individual faces) and deformable
+      cloth meshes can coexist in the same scene. We added UV math corrections to ensure pattern
+      textures scale correctly on planar geometry.
+    </p>
+    <p>
+      For lighting, the system supports both directional and point light sources. Point lights can
+      be set to orbit the scene automatically, which is useful for previewing how the discrete
+      shading bands respond to changing light directions.
+    </p>
+  </section>
+
+  <!-- Preliminary Results -->
+  <section id="results">
+    <h2>Preliminary Results</h2>
+
+    <p>
+      Our pipeline is functional and produces cel-shaded renderings across several scene
+      configurations.
+    </p>
+
+    <!-- Edge ablation -->
+    <figure>
+      <div class="img-row img-row-2">
+        <img src="284_Milestone/figures/edge_off_cube.JPG"
+             alt="Cel shading only — no edge pass" />
+        <img src="284_Milestone/figures/edge_on_cube.JPG"
+             alt="Full pipeline with edge detection enabled" />
+      </div>
+      <figcaption>
+        <strong>Figure 1: Edge detection ablation.</strong> Left: cel shading only, with edge pass
+        disabled. Right: full pipeline with screen-space edge detection enabled, capturing both
+        silhouette outlines and internal fold lines on the cloth.
+      </figcaption>
+    </figure>
+
+    <!-- Band count -->
+    <figure>
+      <div class="img-row img-row-3">
+        <img src="284_Milestone/figures/sphere_b1.png" alt="1 lighting band" />
+        <img src="284_Milestone/figures/sphere_b2.png" alt="2 lighting bands" />
+        <img src="284_Milestone/figures/sphere_b4.png" alt="4 lighting bands" />
+      </div>
+      <figcaption>
+        <strong>Figure 2: Varying the number of discrete lighting bands.</strong> From left to
+        right: 1 band, 2 bands, and 4 bands. Increasing the band count introduces finer
+        gradations in the shading while preserving the flat, stylized appearance.
+      </figcaption>
+    </figure>
+
+    <!-- Overlapping objects & point light -->
+    <figure>
+      <div class="img-row img-row-2">
+        <img src="284_Milestone/figures/overlap_sphere.JPG"
+             alt="Overlapping spheres with depth compositing" />
+        <img src="284_Milestone/figures/cube_light.JPG"
+             alt="Cloth scene with animated orbiting point light" />
+      </div>
+      <figcaption>
+        <strong>Figure 3.</strong> Left: overlapping spheres with correct depth compositing and
+        edge detection at object boundaries. Right: cloth scene with an animated orbiting point
+        light source.
+      </figcaption>
+    </figure>
+
+    <p>
+      The system supports multiple overlapping objects with correct depth compositing and edge
+      detection. Scenes can include both rigid geometry (spheres, planes, cubes) and deformable
+      cloth meshes. Point lights with animated orbiting are supported, and all shading parameters
+      can be adjusted interactively through the GUI.
+    </p>
+  </section>
+
+  <!-- Evaluation Plan -->
+  <section id="evaluation">
+    <h2>Evaluation Plan</h2>
+    <p>We plan to evaluate our system along three axes:</p>
+    <div class="card">
+      <h3>Visual Quality</h3>
+      <p>
+        We will compare our cel-shaded output against standard Phong shading on the same scenes,
+        and conduct ablation studies by incrementally enabling each pipeline component (cel shading
+        only, edge detection only, full pipeline) to verify each component's individual
+        contribution.
+      </p>
+
+      <h3>Performance</h3>
+      <p>
+        We will measure frame time and frame rate across scenes of increasing triangle count and
+        object complexity, and report the per-pass overhead (cel shading pass vs. edge detection
+        pass) relative to the baseline Phong renderer.
+      </p>
+
+      <h3>Flexibility</h3>
+      <p>
+        We will demonstrate parameter tunability by rendering galleries with varying band counts,
+        edge thicknesses, color palettes, and light configurations, showing that the pipeline
+        generalizes across different scenes and art styles.
+      </p>
+    </div>
+  </section>
+
+  <!-- Progress & Updated Plan -->
+  <section id="progress">
+    <h2>Progress &amp; Updated Plan</h2>
+
+    <p>
+      Our original proposal planned to complete edge detection and basic lighting by Week 2. At
+      the milestone stage, the <strong>full two-pass pipeline is implemented and functional</strong>.
+      We have also implemented several features that support our planned final system ahead of
+      schedule.
+    </p>
+
+    <div class="card">
+      <h3>Completed <span class="status-done">Done</span></h3>
+      <ul>
+        <li>Two-pass rendering pipeline (cel shading + screen-space edge detection)</li>
+        <li>Quantized lighting bands with configurable band count</li>
+        <li>Pattern texture support with UV-corrected scaling for planar geometry</li>
+        <li>Multiple overlapping objects with correct depth compositing</li>
+        <li>Directional and point light sources with animated orbiting</li>
+        <li>Live GUI for all shader parameters with preset save/load</li>
+        <li>Unity HLSL export path</li>
+      </ul>
+
+      <h3 style="margin-top:1.2rem;">Remaining (Weeks 3–4) <span class="status-planned">Planned</span></h3>
+      <ol>
+        <li>Add shadow rendering</li>
+        <li>Test on more complex scenes with additional geometry and light configurations</li>
+        <li>Performance benchmarking: measure frame time across scenes of increasing triangle count</li>
+        <li>Stretch goals: stylized shadow effects, additional art-style presets, Blender integration</li>
+        <li>Final paper and project video</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Video -->
+  <section id="video">
+    <h2>Milestone Video</h2>
+    <div style="position:relative; width:100%; aspect-ratio:16/9;">
+      <iframe
+        src="https://www.youtube.com/embed/AUi5J7wxCj0"
+        title="Fifty Shades of Cel – Milestone Video"
+        frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen
+        style="position:absolute; top:0; left:0; width:100%; height:100%; border-radius:var(--radius);">
+      </iframe>
+    </div>
+  </section>
+
+  <!-- References -->
+  <section id="references">
+    <h2>References</h2>
+    <ul class="ref-list">
+      <li>
+        Wikipedia contributors.
+        <a href="https://en.wikipedia.org/wiki/Cel_shading" target="_blank" rel="noopener">
+          <em>Cel shading</em></a>.
+        Wikipedia.
+      </li>
+      <li>
+        Ned Makes Games.
+        <a href="https://www.youtube.com/watch?v=dzItGHyteng" target="_blank" rel="noopener">
+          <em>Cel Shading Tutorial</em></a>.
+        YouTube.
+      </li>
+      <li>
+        Ned Makes Games.
+        <a href="https://www.youtube.com/watch?v=s8N00rjil_4" target="_blank" rel="noopener">
+          <em>Stylized Rendering Tutorial</em></a>.
+        YouTube.
+      </li>
+      <li>
+        Babylon.js Forum.
+        <a href="https://forum.babylonjs.com/t/how-can-i-create-a-beautiful-outline-for-meshes-aka-cell-shading/61556" target="_blank" rel="noopener">
+          <em>How can I create a beautiful outline for meshes aka cell shading?</em></a>
+      </li>
+      <li>
+        Freitas, C. M. D. S., Comba, J. L. D., and Nedel, L. P.
+        <a href="http://sibgrapi.sid.inpe.br/col/sid.inpe.br/sibgrapi/2010/09.15.18.18/doc/texture-based_wireframe_rendering.pdf" target="_blank" rel="noopener">
+          <em>Texture-Based Wireframe Rendering</em></a>.
+        SIBGRAPI, 2010.
+      </li>
+      <li>
+        Reyes Luque, R.
+        <a href="https://raulreyesfinalproject.wordpress.com/wp-content/uploads/2012/12/dissertation_cell-shading-raul_reyes_luque.pdf" target="_blank" rel="noopener">
+          <em>Cell-Shading Dissertation</em></a>.
+        2012.
+      </li>
+      <li>
+        Frans, K., Li, Q., Wang, S., and Sun, T.
+        <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">
+          <em>CS284A_50CelShades Project Repository</em></a>.
+      </li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  <p>
+    CS284A Final Project · Spring 2026 ·
+    <a href="https://cs184.eecs.berkeley.edu" target="_blank" rel="noopener">UC Berkeley</a>
+    &nbsp;|&nbsp;
+    <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">GitHub Repository</a>
+    &nbsp;|&nbsp;
+    <a href="index.html">Proposal</a>
+  </p>
+</footer>
+
+</body>
+</html>
