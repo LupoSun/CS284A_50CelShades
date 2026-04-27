@@ -29,13 +29,19 @@ using json = nlohmann::json;
 
 #define msg(s) cerr << "[ClothSim] " << s << endl;
 
-const string SPHERE = "sphere";
-const string SPHERES = "spheres";
-const string PLANE = "plane";
-const string PLANES = "planes";
-const string CLOTH = "cloth";
+const string KEY_SPHERE = "sphere";
+const string KEY_SPHERES = "spheres";
+const string KEY_PLANE = "plane";
+const string KEY_PLANES = "planes";
+const string KEY_CLOTH = "cloth";
 
-const unordered_set<string> VALID_KEYS = {SPHERE, SPHERES, PLANE, PLANES, CLOTH};
+const unordered_set<string> VALID_KEYS = {
+    KEY_SPHERE,
+    KEY_SPHERES,
+    KEY_PLANE,
+    KEY_PLANES,
+    KEY_CLOTH
+};
 
 ClothSimulator *app = nullptr;
 GLFWwindow *window = nullptr;
@@ -213,7 +219,7 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
     json object = it.value();
 
     // Parse object depending on type (cloth, sphere, or plane)
-    if (key == CLOTH) {
+    if (key == KEY_CLOTH) {
       // Cloth
       double width, height;
       int num_width_points, num_height_points;
@@ -332,7 +338,7 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
       cp->density = density;
       cp->damping = damping;
       cp->ks = ks;
-    } else if (key == SPHERE) {
+    } else if (key == KEY_SPHERE) {
       Vector3D origin;
       double radius, friction;
 
@@ -360,7 +366,7 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
 
       Sphere *s = new Sphere(origin, radius, friction, sphere_num_lat, sphere_num_lon);
       objects->push_back(s);
-    } else if (key == SPHERES) {
+    } else if (key == KEY_SPHERES) {
       for (auto &sphere_obj : object) {
         Vector3D origin;
         double radius, friction;
@@ -390,7 +396,7 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
         Sphere *s = new Sphere(origin, radius, friction, sphere_num_lat, sphere_num_lon);
         objects->push_back(s);
       }
-    } else if (key == PLANES) {
+    } else if (key == KEY_PLANES) {
       for (auto &plane_obj : object) {
         Vector3D point, normal;
         double friction;
