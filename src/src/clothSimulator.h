@@ -38,6 +38,8 @@ public:
   virtual bool scrollCallbackEvent(double x, double y);
   virtual bool resizeCallbackEvent(int width, int height);
 
+
+
 private:
   virtual void initGUI(Screen *screen);
   void drawWireframe(GLShader &shader);
@@ -70,7 +72,8 @@ private:
   float m_edge_depth_threshold = 0.01f;
   float m_edge_normal_threshold = 0.2f;
   float m_edge_strength = 1.0f;
-  float m_edge_sample_distance = 1.0f; // in texels
+  float m_depth_edge_thickness = 1.8f;
+  float m_normal_edge_thickness = 1.0f;
   bool m_edge_enabled = true;
   
   // File management
@@ -82,6 +85,8 @@ private:
   virtual void resetCamera();
   virtual Matrix4f getProjectionMatrix();
   virtual Matrix4f getViewMatrix();
+
+  Matrix4f getLightViewProjectionMatrix();
 
   // Default simulation values
 
@@ -191,6 +196,17 @@ private:
   bool is_alive = true;
 
   Vector2i default_window_size = Vector2i(1280, 1000);
+
+
+  // Shadow mapping
+  GLuint m_shadow_fbo = 0;
+  GLuint m_shadow_depth_tex = 0;
+  int m_shadow_map_size = 2048;
+
+  std::shared_ptr<GLShader> m_shadow_depth_shader;
+
+  void initShadowMap();
+  void destroyShadowMap();
 };
 
 struct UserShader {
@@ -202,6 +218,7 @@ struct UserShader {
   
   std::shared_ptr<GLShader> nanogui_shader;
   std::string display_name;
+
   ShaderTypeHint type_hint;
   
 };

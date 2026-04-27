@@ -7,7 +7,8 @@ uniform sampler2D u_colorTex;
 uniform sampler2D u_normalTex;
 uniform sampler2D u_depthTex;
 
-uniform float u_edge_thickness;
+uniform float u_depth_edge_thickness;
+uniform float u_normal_edge_thickness;
 uniform float u_depth_threshold;
 uniform float u_normal_threshold;
 uniform float u_edge_strength;
@@ -18,8 +19,8 @@ bool isBackground(float d) {
 }
 
 float getDepthEdge(vec2 uv, vec2 texelSize) {
-  vec2 dx = vec2(texelSize.x * u_edge_thickness, 0.0);
-  vec2 dy = vec2(0.0, texelSize.y * u_edge_thickness);
+  vec2 dx = vec2(texelSize.x * u_depth_edge_thickness, 0.0);
+  vec2 dy = vec2(0.0, texelSize.y * u_depth_edge_thickness);
 
   float dC = texture(u_depthTex, uv).r;
   float dL = texture(u_depthTex, uv - dx).r;
@@ -41,15 +42,29 @@ float getDepthEdge(vec2 uv, vec2 texelSize) {
     return 1.0;
   }
 
-  return 0.0;
+  float maxDiff = max(
+    max(abs(dC - dL), abs(dC - dR)),
+    max(abs(dC - dU), abs(dC - dD))
+  );
+
+  return step(u_depth_threshold, maxDiff);
 }
 
 float getNormalEdge(vec2 uv, vec2 texelSize) {
-  vec2 dx = vec2(texelSize.x * u_edge_thickness, 0.0);
-  vec2 dy = vec2(0.0, texelSize.y * u_edge_thickness);
+  vec2 dx = vec2(texelSize.x * u_normal_edge_thickness, 0.0);
+  vec2 dy = vec2(0.0, texelSize.y * u_normal_edge_thickness);
 
   float dC = texture(u_depthTex, uv).r;
   if (isBackground(dC)) {
+    return 0.0;
+  }
+
+  float dL = texture(u_depthTex, uv - dx).r;
+  float dR = texture(u_depthTex, uv + dx).r;
+  float dU = texture(u_depthTex, uv + dy).r;
+  float dD = texture(u_depthTex, uv - dy).r;
+
+  if (isBackground(dL) || isBackground(dR) || isBackground(dU) || isBackground(dD)) {
     return 0.0;
   }
 
@@ -72,16 +87,41 @@ float getNormalEdge(vec2 uv, vec2 texelSize) {
   return step(u_normal_threshold, maxDiff);
 }
 
+float getRawEdge(vec2 uv, vec2 texelSize) {
+  float depthEdge = getDepthEdge(uv, texelSize);
+  float normalEdge = getNormalEdge(uv, texelSize);
+
+  return max(depthEdge, normalEdge * 0.6);
+}
+
+float filterTinyEdges(vec2 uv, vec2 texelSize) {
+  float center = getRawEdge(uv, texelSize);
+
+  if (center < 0.5) {
+    return 0.0;
+  }
+
+  float support = 0.0;
+
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize;
+      support += getRawEdge(uv + offset, texelSize);
+    }
+  }
+
+  float minSupport = 2.0;
+
+  return support >= minSupport ? center : 0.0;
+}
+
 void main() {
   vec3 baseColor = texture(u_colorTex, v_uv).rgb;
 
   vec2 texSize = vec2(textureSize(u_colorTex, 0));
   vec2 texelSize = 1.0 / texSize;
 
-  float depthEdge = getDepthEdge(v_uv, texelSize);
-  float normalEdge = getNormalEdge(v_uv, texelSize);
-
-  float edge = max(depthEdge, normalEdge * 0.6);
+  float edge = filterTinyEdges(v_uv, texelSize);
   edge = clamp(edge * u_edge_strength, 0.0, 1.0);
 
   if (edge > 0.5) {

@@ -1,4 +1,4 @@
-#include <cmath>
+﻿#include <cmath>
 #include <glad/glad.h>
 
 #include <fstream>
@@ -283,7 +283,8 @@ bool ClothSimulator::saveCelPreset(const std::string &path) {
   j["edge_depth_threshold"] = m_edge_depth_threshold;
   j["edge_normal_threshold"] = m_edge_normal_threshold;
   j["edge_strength"] = m_edge_strength;
-  j["edge_thickness"] = m_edge_sample_distance;
+  j["depth_edge_thickness"] = m_depth_edge_thickness;
+  j["normal_edge_thickness"] = m_normal_edge_thickness;
   if (!m_cel_texture_path.empty()) j["texture_path"] = m_cel_texture_path;
 
   std::ofstream out(path);
@@ -351,7 +352,19 @@ bool ClothSimulator::loadCelPreset(const std::string &path) {
   if (has("edge_depth_threshold")) m_edge_depth_threshold = j["edge_depth_threshold"];
   if (has("edge_normal_threshold")) m_edge_normal_threshold = j["edge_normal_threshold"];
   if (has("edge_strength")) m_edge_strength = j["edge_strength"];
-  if (has("edge_thickness")) m_edge_sample_distance = j["edge_thickness"];
+  if (has("depth_edge_thickness")) {
+      m_depth_edge_thickness = j["depth_edge_thickness"];
+  }
+
+  if (has("normal_edge_thickness")) {
+      m_normal_edge_thickness = j["normal_edge_thickness"];
+  }
+
+  // Backward compatibility for old preset files
+  if (has("edge_thickness")) {
+      m_depth_edge_thickness = j["edge_thickness"];
+      m_normal_edge_thickness = j["edge_thickness"];
+  }
 
   if (m_refresh_widgets) m_refresh_widgets();
   std::cout << "Cel preset loaded: " << path << std::endl;
@@ -495,6 +508,13 @@ ClothSimulator::~ClothSimulator() {
   if (cloth) delete cloth;
   if (cp) delete cp;
   if (collision_objects) delete collision_objects;
+
+  destroyShadowMap();
+
+  if (m_shadow_depth_shader) {
+      m_shadow_depth_shader->free();
+      m_shadow_depth_shader.reset();
+  }
 }
 
 void ClothSimulator::loadCloth(Cloth *cloth) { this->cloth = cloth; }
@@ -556,19 +576,50 @@ void ClothSimulator::init() {
   canonicalCamera.configure(camera_info, screen_w, screen_h);
 
   // Initialize offscreen/post-process resources now that screen size is known.
-  try {
+try {
+  // Load fullscreen edge shader used in second pass
+  m_fullscreen_edge_shader = std::make_shared<GLShader>();
+  m_fullscreen_edge_shader->initFromFiles(
+      "FullscreenEdge",
+      m_project_root + "/shaders/fullscreen_edge.vert",
+      m_project_root + "/shaders/fullscreen_edge.frag");
+} catch (const std::exception &e) {
+  std::cout << "Warning: could not load fullscreen edge shader: "
+            << e.what() << std::endl;
+  m_fullscreen_edge_shader.reset();
+}
+
+try {
     // Load fullscreen edge shader used in second pass
     m_fullscreen_edge_shader = std::make_shared<GLShader>();
-    m_fullscreen_edge_shader->initFromFiles("FullscreenEdge",
-                                           m_project_root + "/shaders/fullscreen_edge.vert",
-                                           m_project_root + "/shaders/fullscreen_edge.frag");
-  } catch (const std::exception &e) {
-    std::cout << "Warning: could not load fullscreen edge shader: " << e.what() << std::endl;
+    m_fullscreen_edge_shader->initFromFiles(
+        "FullscreenEdge",
+        m_project_root + "/shaders/fullscreen_edge.vert",
+        m_project_root + "/shaders/fullscreen_edge.frag");
+}
+catch (const std::exception& e) {
+    std::cout << "Warning: could not load fullscreen edge shader: "
+        << e.what() << std::endl;
     m_fullscreen_edge_shader.reset();
-  }
+}
+try {
+    m_shadow_depth_shader = std::make_shared<GLShader>();
+    m_shadow_depth_shader->initFromFiles(
+        "ShadowDepth",
+        m_project_root + "/shaders/shadow_depth.vert",
+        m_project_root + "/shaders/shadow_depth.frag"
+    );
+}
+catch (const std::exception& e) {
+    std::cout << "Warning: could not load shadow depth shader: "
+        << e.what() << std::endl;
+    m_shadow_depth_shader.reset();
+}
 
-  initFramebuffer();
-  initFullscreenQuad();
+initShadowMap();
+
+initFramebuffer();
+initFullscreenQuad();
 }
 
 bool ClothSimulator::isAlive() { return is_alive; }
@@ -603,6 +654,40 @@ void ClothSimulator::drawContents() {
     m_cel_light_pos.z() = r_pos * sin_t;
   }
 
+  Matrix4f model;
+  model.setIdentity();
+
+  Matrix4f lightViewProjection = getLightViewProjectionMatrix();
+
+  // --------------------------------------------------
+  // Pass 0: shadow map pass
+  // --------------------------------------------------
+  if (m_shadow_fbo != 0 && m_shadow_depth_shader && m_cel_light_type == 0) {
+      glBindFramebuffer(GL_FRAMEBUFFER, m_shadow_fbo);
+      glViewport(0, 0, m_shadow_map_size, m_shadow_map_size);
+      glEnable(GL_DEPTH_TEST);
+      glClear(GL_DEPTH_BUFFER_BIT);
+
+      // 可选：减少 shadow acne
+      glEnable(GL_CULL_FACE);
+      glCullFace(GL_FRONT);
+
+      GLShader& shadowDepthShader = *m_shadow_depth_shader;
+      shadowDepthShader.bind();
+      shadowDepthShader.setUniform("u_model", model);
+      shadowDepthShader.setUniform("u_light_view_projection", lightViewProjection);
+
+      // cloth
+      drawPhong(shadowDepthShader);
+
+      // collision objects
+      for (CollisionObject* co : *collision_objects) {
+          co->render(shadowDepthShader);
+      }
+
+      glCullFace(GL_BACK);
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  }
   // Bind the active shader
   // --- Pass 1: render scene into offscreen FBO ---
   if (m_offscreen_fbo != 0) {
@@ -628,6 +713,22 @@ void ClothSimulator::drawContents() {
     Matrix4f view = getViewMatrix();
     Matrix4f projection = getProjectionMatrix();
     Matrix4f viewProjection = projection * view;
+
+    // ------------------------------------------------------------
+// Draw fake shadows first
+// ------------------------------------------------------------
+
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+
+    // Restore MRT draw buffers for normal scene rendering
+    GLenum bufs2[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, bufs2);
+
+    // ------------------------------------------------------------
+    // Draw normal objects
+    // ------------------------------------------------------------
+    shader.bind();
 
     shader.setUniform("u_model", model);
     shader.setUniform("u_view_projection", viewProjection);
@@ -676,6 +777,15 @@ void ClothSimulator::drawContents() {
 
       shader.setUniform("u_texture_cubemap", 5, false);
 
+      shader.setUniform("u_use_mtl_style", 0.0f, false);
+
+      shader.setUniform("u_light_view_projection", lightViewProjection, false);
+      shader.setUniform("u_shadow_map", 6, false);
+      shader.setUniform("u_shadow_bias", 0.0025f, false);
+      shader.setUniform("u_shadow_strength", 0.65f, false);
+
+
+
       glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
 
@@ -690,12 +800,26 @@ void ClothSimulator::drawContents() {
 
       glActiveTexture(GL_TEXTURE5);
       glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
+
+      glActiveTexture(GL_TEXTURE6);
+      glBindTexture(GL_TEXTURE_2D, m_shadow_depth_tex);
+
       drawPhong(shader);
     } break;
     }
 
-    for (CollisionObject *co : *collision_objects) {
-      co->render(*active_shader.nanogui_shader);
+    for (CollisionObject* co : *collision_objects) {
+        bool use_mtl_style = false;
+
+        // 你需要自己根据对象类型/数据判断
+        // 例如：如果它是 mesh 并且成功加载了 mtl，就设成 true
+        if (co->isMesh() && co->hasMtl()) {
+            use_mtl_style = true;
+        }
+
+        shader.setUniform("u_use_mtl_style", use_mtl_style ? 1.0f : 0.0f, false);
+
+        co->render(shader);
     }
 
     if (m_cel_light_type == 1) {
@@ -783,8 +907,17 @@ void ClothSimulator::drawContents() {
       break;
     }
 
-    for (CollisionObject *co : *collision_objects) {
-      co->render(*active_shader.nanogui_shader);
+    for (CollisionObject* co : *collision_objects) {
+        bool use_mtl_style = co->isMesh() && co->hasMtl();
+
+        shader.setUniform("u_use_mtl_style", use_mtl_style ? 1.0f : 0.0f, false);
+
+        // fallback color for non-mesh / no-mtl objects
+        if (!use_mtl_style) {
+            shader.setUniform("u_color", color, false);
+        }
+
+        co->render(shader);
     }
 
     if (m_cel_light_type == 1) {
@@ -831,7 +964,8 @@ void ClothSimulator::drawContents() {
       edge.setUniform("u_normalTex", 1, false);
       edge.setUniform("u_depthTex", 2, false);
 
-      edge.setUniform("u_edge_thickness", m_edge_sample_distance, false);
+      edge.setUniform("u_depth_edge_thickness", m_depth_edge_thickness, false);
+      edge.setUniform("u_normal_edge_thickness", m_normal_edge_thickness, false);
       edge.setUniform("u_depth_threshold", m_edge_depth_threshold, false);
       edge.setUniform("u_normal_threshold", m_edge_normal_threshold, false);
       edge.setUniform("u_edge_strength", m_edge_strength, false);
@@ -1156,6 +1290,46 @@ Matrix4f ClothSimulator::getViewMatrix() {
   return lookAt;
 }
 
+Matrix4f ClothSimulator::getLightViewProjectionMatrix() {
+    Vector3f lightDir = m_cel_light_dir.normalized();
+
+    Vector3D target3 = camera.view_point();
+    Vector3f target(target3.x, target3.y, target3.z);
+
+    float dist = canonical_view_distance * 2.0f;
+    Vector3f eye = target - lightDir * dist;
+
+    Vector3f up(0.0f, 1.0f, 0.0f);
+    if (fabs(lightDir.dot(up)) > 0.95f) {
+        up = Vector3f(1.0f, 0.0f, 0.0f);
+    }
+
+    // lookAt
+    Vector3f z = (eye - target).normalized();
+    Vector3f x = up.cross(z).normalized();
+    Vector3f y = z.cross(x);
+
+    Matrix4f view;
+    view.setIdentity();
+    view(0, 0) = x.x(); view(0, 1) = x.y(); view(0, 2) = x.z(); view(0, 3) = -x.dot(eye);
+    view(1, 0) = y.x(); view(1, 1) = y.y(); view(1, 2) = y.z(); view(1, 3) = -y.dot(eye);
+    view(2, 0) = z.x(); view(2, 1) = z.y(); view(2, 2) = z.z(); view(2, 3) = -z.dot(eye);
+
+    float r = canonical_view_distance * 1.5f;
+    float n = 0.1f;
+    float f = canonical_view_distance * 6.0f;
+
+    Matrix4f proj;
+    proj.setZero();
+    proj(0, 0) = 1.0f / r;
+    proj(1, 1) = 1.0f / r;
+    proj(2, 2) = -2.0f / (f - n);
+    proj(2, 3) = -(f + n) / (f - n);
+    proj(3, 3) = 1.0f;
+
+    return proj * view;
+}
+
 // ----------------------------------------------------------------------------
 // EVENT HANDLING
 // ----------------------------------------------------------------------------
@@ -1212,6 +1386,63 @@ bool ClothSimulator::mouseButtonCallbackEvent(int button, int action,
   }
 
   return false;
+}
+
+void ClothSimulator::initShadowMap() {
+    destroyShadowMap();
+
+    glGenFramebuffers(1, &m_shadow_fbo);
+
+    glGenTextures(1, &m_shadow_depth_tex);
+    glBindTexture(GL_TEXTURE_2D, m_shadow_depth_tex);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_DEPTH_COMPONENT24,
+        m_shadow_map_size,
+        m_shadow_map_size,
+        0,
+        GL_DEPTH_COMPONENT,
+        GL_FLOAT,
+        nullptr
+    );
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_shadow_fbo);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER,
+        GL_DEPTH_ATTACHMENT,
+        GL_TEXTURE_2D,
+        m_shadow_depth_tex,
+        0
+    );
+
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cout << "Shadow framebuffer is not complete!" << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void ClothSimulator::destroyShadowMap() {
+    if (m_shadow_depth_tex != 0) {
+        glDeleteTextures(1, &m_shadow_depth_tex);
+        m_shadow_depth_tex = 0;
+    }
+    if (m_shadow_fbo != 0) {
+        glDeleteFramebuffers(1, &m_shadow_fbo);
+        m_shadow_fbo = 0;
+    }
 }
 
 void ClothSimulator::mouseMoved(double x, double y) { y = screen_h - y; }
@@ -1487,8 +1718,6 @@ void ClothSimulator::initGUI(Screen *screen) {
   // Appearance
 
   {
-    
-    
     ComboBox *cb = new ComboBox(window, shaders_combobox_names);
     cb->setFontSize(14);
     cb->setCallback(
@@ -1687,14 +1916,27 @@ void ClothSimulator::initGUI(Screen *screen) {
     layout->setSpacing(0, 10);
     panel->setLayout(layout);
 
-    new Label(panel, "Thickness :", "sans-bold");
-    FloatBox<float> *fb = new FloatBox<float>(panel);
+    new Label(panel, "Depth thick :", "sans-bold");
+    FloatBox<float>* fb = new FloatBox<float>(panel);
     fb->setEditable(true);
     fb->setFixedSize(Vector2i(100, 20));
     fb->setFontSize(14);
-    fb->setValue(m_edge_sample_distance);
+    fb->setValue(m_depth_edge_thickness);
     fb->setSpinnable(true);
-    fb->setCallback([this](float value) { m_edge_sample_distance = value; });
+    fb->setCallback([this](float value) {
+        m_depth_edge_thickness = value;
+        });
+
+    new Label(panel, "Normal thick :", "sans-bold");
+    fb = new FloatBox<float>(panel);
+    fb->setEditable(true);
+    fb->setFixedSize(Vector2i(100, 20));
+    fb->setFontSize(14);
+    fb->setValue(m_normal_edge_thickness);
+    fb->setSpinnable(true);
+    fb->setCallback([this](float value) {
+        m_normal_edge_thickness = value;
+        });
 
     // expose background color in same panel? No, add separate control below.
 

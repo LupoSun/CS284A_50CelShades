@@ -17,6 +17,7 @@
 #include "collision/sphere.h"
 #include "cloth.h"
 #include "clothSimulator.h"
+#include "collision/mesh.h"
 #include "json.hpp"
 #include "misc/file_utils.h"
 
@@ -34,13 +35,17 @@ const string KEY_SPHERES = "spheres";
 const string KEY_PLANE = "plane";
 const string KEY_PLANES = "planes";
 const string KEY_CLOTH = "cloth";
+const string KEY_MESH = "mesh";
+const string KEY_MESHES = "meshes";
 
 const unordered_set<string> VALID_KEYS = {
     KEY_SPHERE,
     KEY_SPHERES,
     KEY_PLANE,
     KEY_PLANES,
-    KEY_CLOTH
+    KEY_CLOTH,
+    KEY_MESH,
+    KEY_MESHES
 };
 
 ClothSimulator *app = nullptr;
@@ -433,7 +438,7 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
         Plane *p = new Plane(point, normal, friction, planeLength);
         objects->push_back(p);
       }
-    } else { // PLANE (single)
+    }else if (key == KEY_PLANE) {
       Vector3D point, normal;
       double friction;
 
@@ -468,6 +473,48 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
 
       Plane *p = new Plane(point, normal, friction, planeLength);
       objects->push_back(p);
+    }else if (key == KEY_MESH) {
+     string path;
+     double friction = 0.0;
+
+     auto it_path = object.find("path");
+     if (it_path != object.end()) {
+         path = it_path->get<string>();
+     }
+     else {
+         incompleteObjectError("mesh", "path");
+     }
+
+     auto it_friction = object.find("friction");
+     if (it_friction != object.end()) {
+         friction = *it_friction;
+     }
+
+     Mesh* m = new Mesh(path, friction);
+     objects->push_back(m);
+
+    }
+ else if (key == KEY_MESHES) {
+     for (auto& mesh_obj : object) {
+         string path;
+         double friction = 0.0;
+
+         auto it_path = mesh_obj.find("path");
+         if (it_path != mesh_obj.end()) {
+             path = it_path->get<string>();
+         }
+         else {
+             incompleteObjectError("mesh", "path");
+         }
+
+         auto it_friction = mesh_obj.find("friction");
+         if (it_friction != mesh_obj.end()) {
+             friction = *it_friction;
+         }
+
+         Mesh* m = new Mesh(path, friction);
+         objects->push_back(m);
+     }
     }
   }
 

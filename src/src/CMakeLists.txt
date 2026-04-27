@@ -66,7 +66,7 @@ link_directories(
 #-------------------------------------------------------------------------------
 # Add executable
 #-------------------------------------------------------------------------------
-add_executable(clothsim ${CLOTHSIM_VIEWER_SOURCE})
+add_executable(clothsim ${CLOTHSIM_VIEWER_SOURCE} "collision/mesh.h" "collision/mesh.cpp")
 
 target_link_libraries(clothsim
     CGL ${CGL_LIBRARIES}
