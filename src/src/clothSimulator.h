@@ -45,6 +45,22 @@ private:
   void drawWireframe(GLShader &shader);
   void drawNormals(GLShader &shader);
   void drawPhong(GLShader &shader);
+  int shaderIndexByName(const std::string &name) const;
+  void renderShadowMap(const Matrix4f &lightViewProjection);
+  void renderSceneToOffscreen(const UserShader &active_shader,
+                              bool cel_materials,
+                              const Matrix4f &lightViewProjection,
+                              double projection_aspect = -1.0);
+  void renderSceneGeometry(GLShader &shader, const UserShader &active_shader,
+                           bool cel_materials,
+                           const Matrix4f &viewProjection,
+                           const Matrix4f &lightViewProjection);
+  void renderEdgeComposite(GLuint target_fbo);
+  void renderBaselineToFramebuffer(double projection_aspect = -1.0);
+  void renderCompareComposite();
+  void setMeshCollisionEnabled(bool enabled);
+  bool loadRuntimeMesh(const std::string &path, double friction,
+                       const Vector3D &scale, const Vector3D &translate);
   
   void load_shaders();
   void load_textures();
@@ -61,11 +77,17 @@ private:
   GLuint m_scene_color_tex = 0;          // color (RGBA) texture
   GLuint m_scene_normal_tex = 0;         // normal (RGB) texture
   GLuint m_scene_depth_tex = 0;          // depth texture
+  GLuint m_cel_composite_fbo = 0;        // final cel+edge color for compare mode
+  GLuint m_cel_composite_tex = 0;
+  GLuint m_baseline_fbo = 0;             // Phong baseline color for compare mode
+  GLuint m_baseline_color_tex = 0;
+  GLuint m_baseline_depth_tex = 0;
 
   GLuint m_fullscreen_vao = 0;           // fullscreen quad VAO
   GLuint m_fullscreen_vbo = 0;           // fullscreen quad VBO
 
   std::shared_ptr<GLShader> m_fullscreen_edge_shader; // separate fullscreen edge shader
+  std::shared_ptr<GLShader> m_fullscreen_compare_shader;
 
   // Edge/outline parameters (tweakable)
   nanogui::Color m_edge_line_color = nanogui::Color(0.0f, 0.0f, 0.0f, 1.0f);
@@ -75,6 +97,16 @@ private:
   float m_depth_edge_thickness = 1.8f;
   float m_normal_edge_thickness = 1.0f;
   bool m_edge_enabled = true;
+
+  bool m_compare_enabled = false;
+  int m_compare_layout = 0; // 0 = wipe boundary, 1 = side-by-side panes
+  float m_compare_split = 0.5f;
+  bool m_compare_animate = false;
+  float m_compare_anim_speed = 0.75f;
+  bool m_mesh_collision_enabled = false;
+  nanogui::Vector3f m_gui_mesh_scale = nanogui::Vector3f(1.0f, 1.0f, 1.0f);
+  nanogui::Vector3f m_gui_mesh_translate = nanogui::Vector3f(0.0f, 0.0f, 0.0f);
+  float m_gui_mesh_friction = 0.0f;
   
   // File management
   
@@ -84,6 +116,7 @@ private:
 
   virtual void resetCamera();
   virtual Matrix4f getProjectionMatrix();
+  Matrix4f getProjectionMatrixForAspect(double aspect);
   virtual Matrix4f getViewMatrix();
 
   Matrix4f getLightViewProjectionMatrix();
@@ -99,6 +132,8 @@ private:
   Cloth *cloth;
   ClothParameters *cp;
   vector<CollisionObject *> *collision_objects;
+  vector<CollisionObject *> m_runtime_meshes;
+  bool m_owns_collision_objects = false;
 
   // OpenGL attributes
 

@@ -80,6 +80,57 @@ GLFWwindow *createWindowForVersion(int major, int minor) {
   return glfwCreateWindow(1280, 1000, "Cloth Simulator", nullptr, nullptr);
 }
 
+bool isAbsolutePath(const std::string& path) {
+  return (!path.empty() && (path[0] == '/' || path[0] == '\\')) ||
+         (path.size() > 2 && path[1] == ':');
+}
+
+std::string directoryOf(const std::string& filepath) {
+  size_t slash_pos = filepath.find_last_of("/\\");
+  if (slash_pos == std::string::npos) return "";
+  return filepath.substr(0, slash_pos);
+}
+
+std::string joinPath(const std::string& base, const std::string& leaf) {
+  if (base.empty()) return leaf;
+  if (leaf.empty()) return base;
+  char last = base[base.size() - 1];
+  if (last == '/' || last == '\\') return base + leaf;
+  return base + "/" + leaf;
+}
+
+std::string resolveMeshPath(const std::string& path,
+                            const std::string& scene_dir,
+                            const std::string& project_root) {
+  if (isAbsolutePath(path)) return path;
+
+  std::string scene_relative = joinPath(scene_dir, path);
+  if (FileUtils::file_exists(scene_relative)) return scene_relative;
+
+  std::string root_relative = joinPath(project_root, path);
+  if (FileUtils::file_exists(root_relative)) return root_relative;
+
+  return scene_relative;
+}
+
+Vector3D jsonVec3OrDefault(const json& object,
+                           const std::string& key,
+                           const Vector3D& default_value) {
+  auto it = object.find(key);
+  if (it == object.end()) return default_value;
+
+  if (it->is_number()) {
+    double s = *it;
+    return Vector3D(s, s, s);
+  }
+
+  if (it->is_array() && it->size() >= 3) {
+    return Vector3D((double)(*it)[0], (double)(*it)[1], (double)(*it)[2]);
+  }
+
+  return default_value;
+}
+
 } // namespace
 
 void createGLContexts() {
@@ -200,7 +251,10 @@ void incompleteObjectError(const char *object, const char *attribute) {
   exit(-1);
 }
 
-bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vector<CollisionObject *>* objects, int sphere_num_lat, int sphere_num_lon) {
+bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp,
+                         vector<CollisionObject *>* objects,
+                         int sphere_num_lat, int sphere_num_lon,
+                         const string& project_root) {
   // Read JSON from file
   ifstream i(filename);
   if (!i.good()) {
@@ -208,6 +262,38 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
   }
   json j;
   i >> j;
+  string scene_dir = directoryOf(filename);
+
+  auto addMesh = [&](const json& mesh_obj) {
+      string path;
+      double friction = 0.0;
+      bool collide = false;
+
+      auto it_path = mesh_obj.find("path");
+      if (it_path != mesh_obj.end()) {
+          path = it_path->get<string>();
+      }
+      else {
+          incompleteObjectError("mesh", "path");
+      }
+
+      auto it_friction = mesh_obj.find("friction");
+      if (it_friction != mesh_obj.end()) {
+          friction = *it_friction;
+      }
+
+      auto it_collide = mesh_obj.find("collide");
+      if (it_collide != mesh_obj.end()) {
+          collide = *it_collide;
+      }
+
+      Vector3D scale = jsonVec3OrDefault(mesh_obj, "scale", Vector3D(1.0, 1.0, 1.0));
+      Vector3D translate = jsonVec3OrDefault(mesh_obj, "translate", Vector3D(0.0, 0.0, 0.0));
+      string resolved_path = resolveMeshPath(path, scene_dir, project_root);
+
+      Mesh* m = new Mesh(resolved_path, friction, scale, translate, collide);
+      objects->push_back(m);
+  };
 
   // Loop over objects in scene
   for (json::iterator it = j.begin(); it != j.end(); ++it) {
@@ -474,46 +560,11 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp, vec
       Plane *p = new Plane(point, normal, friction, planeLength);
       objects->push_back(p);
     }else if (key == KEY_MESH) {
-     string path;
-     double friction = 0.0;
-
-     auto it_path = object.find("path");
-     if (it_path != object.end()) {
-         path = it_path->get<string>();
-     }
-     else {
-         incompleteObjectError("mesh", "path");
-     }
-
-     auto it_friction = object.find("friction");
-     if (it_friction != object.end()) {
-         friction = *it_friction;
-     }
-
-     Mesh* m = new Mesh(path, friction);
-     objects->push_back(m);
-
+     addMesh(object);
     }
  else if (key == KEY_MESHES) {
      for (auto& mesh_obj : object) {
-         string path;
-         double friction = 0.0;
-
-         auto it_path = mesh_obj.find("path");
-         if (it_path != mesh_obj.end()) {
-             path = it_path->get<string>();
-         }
-         else {
-             incompleteObjectError("mesh", "path");
-         }
-
-         auto it_friction = mesh_obj.find("friction");
-         if (it_friction != mesh_obj.end()) {
-             friction = *it_friction;
-         }
-
-         Mesh* m = new Mesh(path, friction);
-         objects->push_back(m);
+         addMesh(mesh_obj);
      }
     }
   }
@@ -619,7 +670,9 @@ int main(int argc, char **argv) {
     file_to_load_from = def_fname.str();
   }
   
-  bool success = loadObjectsFromFile(file_to_load_from, &cloth, &cp, &objects, sphere_num_lat, sphere_num_lon);
+  bool success = loadObjectsFromFile(file_to_load_from, &cloth, &cp, &objects,
+                                     sphere_num_lat, sphere_num_lon,
+                                     project_root);
   if (!success) {
     std::cout << "Warn: Unable to load from file: " << file_to_load_from << std::endl;
   }

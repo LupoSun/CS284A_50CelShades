@@ -1,4 +1,5 @@
-﻿#include <cmath>
+﻿#include <algorithm>
+#include <cmath>
 #include <glad/glad.h>
 
 #include <fstream>
@@ -7,6 +8,7 @@
 #include <CGL/vector3D.h>
 #include <nanogui/nanogui.h>
 #include <nanogui/colorpicker.h>
+#include <nanogui/vscrollpanel.h>
 
 #include "json.hpp"
 
@@ -14,6 +16,7 @@
 
 #include "camera.h"
 #include "cloth.h"
+#include "collision/mesh.h"
 #include "collision/plane.h"
 #include "collision/sphere.h"
 #include "misc/camera_info.h"
@@ -188,6 +191,10 @@ void ClothSimulator::load_shaders() {
     
     if (file_extension != "frag") {
       std::cout << "Skipping non-shader file: " << shader_fname << std::endl;
+      continue;
+    }
+    if (shader_name.find("fullscreen_") == 0 || shader_name == "shadow_depth") {
+      std::cout << "Skipping internal shader file: " << shader_fname << std::endl;
       continue;
     }
     
@@ -504,10 +511,23 @@ ClothSimulator::~ClothSimulator() {
       m_fullscreen_edge_shader->free();
       m_fullscreen_edge_shader.reset();
   }
+  if (m_fullscreen_compare_shader) {
+      m_fullscreen_compare_shader->free();
+      m_fullscreen_compare_shader.reset();
+  }
 
-  if (cloth) delete cloth;
-  if (cp) delete cp;
-  if (collision_objects) delete collision_objects;
+  if (collision_objects) {
+      for (CollisionObject *co : m_runtime_meshes) {
+          delete co;
+      }
+      m_runtime_meshes.clear();
+      if (m_owns_collision_objects) {
+          delete collision_objects;
+      }
+  }
+  cloth = nullptr;
+  cp = nullptr;
+  collision_objects = nullptr;
 
   destroyShadowMap();
 
@@ -521,7 +541,21 @@ void ClothSimulator::loadCloth(Cloth *cloth) { this->cloth = cloth; }
 
 void ClothSimulator::loadClothParameters(ClothParameters *cp) { this->cp = cp; }
 
-void ClothSimulator::loadCollisionObjects(vector<CollisionObject *> *objects) { this->collision_objects = objects; }
+void ClothSimulator::loadCollisionObjects(vector<CollisionObject *> *objects) {
+  this->collision_objects = objects;
+  m_owns_collision_objects = false;
+
+  m_mesh_collision_enabled = false;
+  if (collision_objects) {
+    for (CollisionObject *co : *collision_objects) {
+      if (co->isMesh() && co->collisionEnabled()) {
+        m_mesh_collision_enabled = true;
+        break;
+      }
+    }
+  }
+  setMeshCollisionEnabled(m_mesh_collision_enabled);
+}
 
 /**
  * Initializes the cloth simulation and spawns a new thread to separate
@@ -576,45 +610,42 @@ void ClothSimulator::init() {
   canonicalCamera.configure(camera_info, screen_w, screen_h);
 
   // Initialize offscreen/post-process resources now that screen size is known.
-try {
-  // Load fullscreen edge shader used in second pass
-  m_fullscreen_edge_shader = std::make_shared<GLShader>();
-  m_fullscreen_edge_shader->initFromFiles(
-      "FullscreenEdge",
-      m_project_root + "/shaders/fullscreen_edge.vert",
-      m_project_root + "/shaders/fullscreen_edge.frag");
-} catch (const std::exception &e) {
-  std::cout << "Warning: could not load fullscreen edge shader: "
-            << e.what() << std::endl;
-  m_fullscreen_edge_shader.reset();
-}
-
-try {
-    // Load fullscreen edge shader used in second pass
+  try {
     m_fullscreen_edge_shader = std::make_shared<GLShader>();
     m_fullscreen_edge_shader->initFromFiles(
         "FullscreenEdge",
         m_project_root + "/shaders/fullscreen_edge.vert",
         m_project_root + "/shaders/fullscreen_edge.frag");
-}
-catch (const std::exception& e) {
+  } catch (const std::exception& e) {
     std::cout << "Warning: could not load fullscreen edge shader: "
         << e.what() << std::endl;
     m_fullscreen_edge_shader.reset();
-}
-try {
+  }
+
+  try {
+    m_fullscreen_compare_shader = std::make_shared<GLShader>();
+    m_fullscreen_compare_shader->initFromFiles(
+        "FullscreenCompare",
+        m_project_root + "/shaders/fullscreen_edge.vert",
+        m_project_root + "/shaders/fullscreen_compare.frag");
+  } catch (const std::exception& e) {
+    std::cout << "Warning: could not load fullscreen compare shader: "
+        << e.what() << std::endl;
+    m_fullscreen_compare_shader.reset();
+  }
+
+  try {
     m_shadow_depth_shader = std::make_shared<GLShader>();
     m_shadow_depth_shader->initFromFiles(
         "ShadowDepth",
         m_project_root + "/shaders/shadow_depth.vert",
         m_project_root + "/shaders/shadow_depth.frag"
     );
-}
-catch (const std::exception& e) {
+  } catch (const std::exception& e) {
     std::cout << "Warning: could not load shadow depth shader: "
         << e.what() << std::endl;
     m_shadow_depth_shader.reset();
-}
+  }
 
 initShadowMap();
 
@@ -624,6 +655,337 @@ initFullscreenQuad();
 
 bool ClothSimulator::isAlive() { return is_alive; }
 
+int ClothSimulator::shaderIndexByName(const std::string &name) const {
+  for (size_t i = 0; i < shaders.size(); ++i) {
+    if (shaders[i].display_name == name) return (int)i;
+  }
+  return -1;
+}
+
+void ClothSimulator::setMeshCollisionEnabled(bool enabled) {
+  m_mesh_collision_enabled = enabled;
+  if (!collision_objects) return;
+
+  for (CollisionObject *co : *collision_objects) {
+    if (co->isMesh()) {
+      co->setCollisionEnabled(enabled);
+    }
+  }
+}
+
+bool ClothSimulator::loadRuntimeMesh(const std::string &path, double friction,
+                                     const Vector3D &scale,
+                                     const Vector3D &translate) {
+  if (path.empty()) {
+    return false;
+  }
+
+  Mesh *mesh = new Mesh(path, friction, scale, translate,
+                        m_mesh_collision_enabled);
+  if (!mesh->loaded()) {
+    delete mesh;
+    return false;
+  }
+
+  if (!collision_objects) {
+    collision_objects = new vector<CollisionObject *>();
+    m_owns_collision_objects = true;
+  }
+
+  collision_objects->push_back(mesh);
+  m_runtime_meshes.push_back(mesh);
+  setMeshCollisionEnabled(m_mesh_collision_enabled);
+  return true;
+}
+
+void ClothSimulator::renderShadowMap(const Matrix4f &lightViewProjection) {
+  if (m_shadow_fbo == 0 || !m_shadow_depth_shader || m_cel_light_type != 0) {
+    return;
+  }
+
+  Matrix4f model;
+  model.setIdentity();
+
+  glBindFramebuffer(GL_FRAMEBUFFER, m_shadow_fbo);
+  glViewport(0, 0, m_shadow_map_size, m_shadow_map_size);
+  glEnable(GL_DEPTH_TEST);
+  glClear(GL_DEPTH_BUFFER_BIT);
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_FRONT);
+
+  GLShader &shader = *m_shadow_depth_shader;
+  shader.bind();
+  shader.setUniform("u_model", model);
+  shader.setUniform("u_light_view_projection", lightViewProjection);
+
+  drawPhong(shader);
+
+  if (collision_objects) {
+    for (CollisionObject *co : *collision_objects) {
+      shader.setUniform("u_model", model);
+      co->render(shader);
+    }
+  }
+
+  shader.setUniform("u_model", model);
+  glCullFace(GL_BACK);
+  glDisable(GL_CULL_FACE);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void ClothSimulator::renderSceneGeometry(
+    GLShader &shader, const UserShader &active_shader, bool cel_materials,
+    const Matrix4f &viewProjection, const Matrix4f &lightViewProjection) {
+
+  Matrix4f model;
+  model.setIdentity();
+  shader.bind();
+  shader.setUniform("u_model", model);
+  shader.setUniform("u_view_projection", viewProjection);
+
+  switch (active_shader.type_hint) {
+  case WIREFRAME:
+    shader.setUniform("u_color", color, false);
+    drawWireframe(shader);
+    break;
+  case NORMALS:
+    drawNormals(shader);
+    break;
+  case PHONG: {
+    Vector3D cam_pos = camera.position();
+    Vector3f cel_light_dir = m_cel_light_dir.normalized();
+
+    shader.setUniform("u_color", color, false);
+    shader.setUniform("u_cam_pos", Vector3f(cam_pos.x, cam_pos.y, cam_pos.z), false);
+    shader.setUniform("u_light_pos", Vector3f(0.5f, 2.0f, 2.0f), false);
+    shader.setUniform("u_light_intensity", Vector3f(3.0f, 3.0f, 3.0f), false);
+    shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
+    shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
+    shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
+    shader.setUniform("u_texture_4_size", Vector2f(m_gl_texture_4_size.x, m_gl_texture_4_size.y), false);
+    shader.setUniform("u_texture_1", 1, false);
+    shader.setUniform("u_texture_2", 2, false);
+    shader.setUniform("u_texture_3", 3, false);
+    shader.setUniform("u_texture_4", 4, false);
+    shader.setUniform("u_normal_scaling", m_normal_scaling, false);
+    shader.setUniform("u_height_scaling", m_height_scaling, false);
+    shader.setUniform("u_texture_cubemap", 5, false);
+
+    if (cel_materials) {
+      shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
+      shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
+      shader.setUniform("u_cel_light_dir", cel_light_dir, false);
+      shader.setUniform("u_cel_light_pos", m_cel_light_pos, false);
+      shader.setUniform("u_cel_light_type", (float)m_cel_light_type, false);
+      shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
+      shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
+      shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
+      shader.setUniform("u_cel_highlight_strength", m_cel_highlight_strength, false);
+      shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
+      shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
+      shader.setUniform("u_cel_bands", m_cel_bands, false);
+      shader.setUniform("u_cel_flat", 0.0f, false);
+      shader.setUniform("u_use_mtl_style", 0.0f, false);
+      shader.setUniform("u_light_view_projection", lightViewProjection, false);
+      shader.setUniform("u_shadow_map", 6, false);
+      shader.setUniform("u_shadow_bias", 0.0025f, false);
+      shader.setUniform("u_shadow_strength", 0.65f, false);
+    }
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_gl_texture_2);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, m_gl_texture_3);
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, m_gl_texture_4);
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_2D, m_shadow_depth_tex);
+
+    drawPhong(shader);
+  } break;
+  }
+
+  if (collision_objects) {
+    for (CollisionObject *co : *collision_objects) {
+      shader.setUniform("u_model", model);
+      if (active_shader.type_hint == PHONG) {
+        bool use_mtl_style = cel_materials && co->isMesh() && co->hasMtl();
+        shader.setUniform("u_use_mtl_style", use_mtl_style ? 1.0f : 0.0f, false);
+        if (!use_mtl_style) {
+          shader.setUniform("u_color", color, false);
+        }
+      }
+      co->render(shader);
+    }
+  }
+
+  shader.setUniform("u_model", model);
+
+  if (cel_materials && m_cel_light_type == 1) {
+    shader.setUniform("u_color", nanogui::Color(1.0f, 0.9f, 0.2f, 1.0f), false);
+    shader.setUniform("u_cel_flat", 1.0f, false);
+    Vector3D lp(m_cel_light_pos.x(), m_cel_light_pos.y(), m_cel_light_pos.z());
+    m_light_sphere.draw_sphere(shader, lp, 0.06);
+    shader.setUniform("u_model", model);
+    shader.setUniform("u_cel_flat", 0.0f, false);
+    shader.setUniform("u_color", color, false);
+  }
+}
+
+void ClothSimulator::renderSceneToOffscreen(
+    const UserShader &active_shader, bool cel_materials,
+    const Matrix4f &lightViewProjection, double projection_aspect) {
+
+  glBindFramebuffer(GL_FRAMEBUFFER, m_offscreen_fbo);
+  glViewport(0, 0, screen_w, screen_h);
+  glEnable(GL_DEPTH_TEST);
+  glDepthMask(GL_TRUE);
+  glDisable(GL_BLEND);
+
+  GLenum bufs[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+  glDrawBuffers(2, bufs);
+  glClearColor(m_background_color[0], m_background_color[1],
+               m_background_color[2], m_background_color[3]);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  Matrix4f projection = projection_aspect > 0.0
+                            ? getProjectionMatrixForAspect(projection_aspect)
+                            : getProjectionMatrix();
+  Matrix4f viewProjection = projection * getViewMatrix();
+  GLShader &shader = *active_shader.nanogui_shader;
+  renderSceneGeometry(shader, active_shader, cel_materials,
+                      viewProjection, lightViewProjection);
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void ClothSimulator::renderEdgeComposite(GLuint target_fbo) {
+  if (!m_edge_enabled || !m_fullscreen_edge_shader) {
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_offscreen_fbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo);
+    if (target_fbo != 0) {
+      glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    }
+    glBlitFramebuffer(0, 0, screen_w, screen_h, 0, 0, screen_w, screen_h,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return;
+  }
+
+  glBindFramebuffer(GL_FRAMEBUFFER, target_fbo);
+  if (target_fbo != 0) {
+    GLenum buf = GL_COLOR_ATTACHMENT0;
+    glDrawBuffers(1, &buf);
+  }
+  glViewport(0, 0, screen_w, screen_h);
+  glDisable(GL_DEPTH_TEST);
+  glClearColor(m_background_color[0], m_background_color[1],
+               m_background_color[2], m_background_color[3]);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  GLShader &edge = *m_fullscreen_edge_shader;
+  edge.bind();
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, m_scene_color_tex);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, m_scene_normal_tex);
+  glActiveTexture(GL_TEXTURE2);
+  glBindTexture(GL_TEXTURE_2D, m_scene_depth_tex);
+
+  edge.setUniform("u_colorTex", 0, false);
+  edge.setUniform("u_normalTex", 1, false);
+  edge.setUniform("u_depthTex", 2, false);
+  edge.setUniform("u_depth_edge_thickness", m_depth_edge_thickness, false);
+  edge.setUniform("u_normal_edge_thickness", m_normal_edge_thickness, false);
+  edge.setUniform("u_depth_threshold", m_edge_depth_threshold, false);
+  edge.setUniform("u_normal_threshold", m_edge_normal_threshold, false);
+  edge.setUniform("u_edge_strength", m_edge_strength, false);
+  edge.setUniform("u_edge_color", colorToVec3(m_edge_line_color), false);
+
+  drawFullscreenQuad();
+
+  glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, 0);
+  glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, 0);
+  glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void ClothSimulator::renderBaselineToFramebuffer(double projection_aspect) {
+  int phong_idx = shaderIndexByName("Phong");
+  if (phong_idx < 0) {
+    phong_idx = active_shader_idx;
+  }
+
+  const UserShader &baseline_shader = shaders[phong_idx];
+
+  glBindFramebuffer(GL_FRAMEBUFFER, m_baseline_fbo);
+  GLenum buf = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &buf);
+  glViewport(0, 0, screen_w, screen_h);
+  glEnable(GL_DEPTH_TEST);
+  glDepthMask(GL_TRUE);
+  glClearColor(m_background_color[0], m_background_color[1],
+               m_background_color[2], m_background_color[3]);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  Matrix4f lightViewProjection = getLightViewProjectionMatrix();
+  Matrix4f projection = projection_aspect > 0.0
+                            ? getProjectionMatrixForAspect(projection_aspect)
+                            : getProjectionMatrix();
+  Matrix4f viewProjection = projection * getViewMatrix();
+  GLShader &shader = *baseline_shader.nanogui_shader;
+  renderSceneGeometry(shader, baseline_shader, false,
+                      viewProjection, lightViewProjection);
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void ClothSimulator::renderCompareComposite() {
+  if (!m_fullscreen_compare_shader) {
+    renderEdgeComposite(0);
+    return;
+  }
+
+  if (m_compare_animate) {
+    float t = (float)glfwGetTime() * m_compare_anim_speed;
+    m_compare_split = 0.5f + 0.45f * std::sin(t);
+  }
+  m_compare_split = std::max(0.0f, std::min(1.0f, m_compare_split));
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glViewport(0, 0, screen_w, screen_h);
+  glDisable(GL_DEPTH_TEST);
+  glClearColor(m_background_color[0], m_background_color[1],
+               m_background_color[2], m_background_color[3]);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  GLShader &compare = *m_fullscreen_compare_shader;
+  compare.bind();
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, m_cel_composite_tex);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, m_baseline_color_tex);
+
+  compare.setUniform("u_leftTex", 0, false);
+  compare.setUniform("u_rightTex", 1, false);
+  compare.setUniform("u_split", m_compare_split, false);
+  compare.setUniform("u_compare_mode", (float)m_compare_layout, false);
+  compare.setUniform("u_divider_width", 2.0f / std::max(1, screen_w), false);
+  compare.setUniform("u_divider_color", Vector3f(1.0f, 1.0f, 1.0f), false);
+
+  drawFullscreenQuad();
+
+  glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, 0);
+  glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 void ClothSimulator::drawContents() {
   glEnable(GL_DEPTH_TEST);
 
@@ -631,11 +993,11 @@ void ClothSimulator::drawContents() {
     vector<Vector3D> external_accelerations = {gravity};
 
     for (int i = 0; i < simulation_steps; i++) {
-      cloth->simulate(frames_per_sec, simulation_steps, cp, external_accelerations, collision_objects);
+      cloth->simulate(frames_per_sec, simulation_steps, cp,
+                      external_accelerations, collision_objects);
     }
   }
 
-  // Animate light rotation around the Y axis
   if (m_light_rotate) {
     float t = (float)glfwGetTime() * m_light_rotate_speed;
     float cos_t = std::cos(t);
@@ -654,337 +1016,42 @@ void ClothSimulator::drawContents() {
     m_cel_light_pos.z() = r_pos * sin_t;
   }
 
-  Matrix4f model;
-  model.setIdentity();
-
   Matrix4f lightViewProjection = getLightViewProjectionMatrix();
+  renderShadowMap(lightViewProjection);
 
-  // --------------------------------------------------
-  // Pass 0: shadow map pass
-  // --------------------------------------------------
-  if (m_shadow_fbo != 0 && m_shadow_depth_shader && m_cel_light_type == 0) {
-      glBindFramebuffer(GL_FRAMEBUFFER, m_shadow_fbo);
-      glViewport(0, 0, m_shadow_map_size, m_shadow_map_size);
-      glEnable(GL_DEPTH_TEST);
-      glClear(GL_DEPTH_BUFFER_BIT);
+  const UserShader &active_shader = shaders[active_shader_idx];
+  int cel_idx = shaderIndexByName("Cel");
+  const UserShader &cel_shader = (cel_idx >= 0) ? shaders[cel_idx] : active_shader;
 
-      // 可选：减少 shadow acne
-      glEnable(GL_CULL_FACE);
-      glCullFace(GL_FRONT);
-
-      GLShader& shadowDepthShader = *m_shadow_depth_shader;
-      shadowDepthShader.bind();
-      shadowDepthShader.setUniform("u_model", model);
-      shadowDepthShader.setUniform("u_light_view_projection", lightViewProjection);
-
-      // cloth
-      drawPhong(shadowDepthShader);
-
-      // collision objects
-      for (CollisionObject* co : *collision_objects) {
-          co->render(shadowDepthShader);
-      }
-
-      glCullFace(GL_BACK);
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  }
-  // Bind the active shader
-  // --- Pass 1: render scene into offscreen FBO ---
-  if (m_offscreen_fbo != 0) {
-    glBindFramebuffer(GL_FRAMEBUFFER, m_offscreen_fbo);
-    // Ensure we render to full size attachments
+  if (m_offscreen_fbo == 0) {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, screen_w, screen_h);
     glEnable(GL_DEPTH_TEST);
-    // Clear color and depth
-    glClearColor(m_background_color[0], m_background_color[1], m_background_color[2], m_background_color[3]);
+    glClearColor(m_background_color[0], m_background_color[1],
+                 m_background_color[2], m_background_color[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // Set draw buffers in case multiple attachments are present
-    GLenum bufs[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-    glDrawBuffers(2, bufs);
-
-    // Bind the active shader and render the scene (same as before)
-    const UserShader& active_shader = shaders[active_shader_idx];
+    Matrix4f viewProjection = getProjectionMatrix() * getViewMatrix();
     GLShader &shader = *active_shader.nanogui_shader;
-    shader.bind();
-
-    // Prepare the camera projection matrix
-    Matrix4f model; model.setIdentity();
-    Matrix4f view = getViewMatrix();
-    Matrix4f projection = getProjectionMatrix();
-    Matrix4f viewProjection = projection * view;
-
-    // ------------------------------------------------------------
-// Draw fake shadows first
-// ------------------------------------------------------------
-
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-
-    // Restore MRT draw buffers for normal scene rendering
-    GLenum bufs2[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-    glDrawBuffers(2, bufs2);
-
-    // ------------------------------------------------------------
-    // Draw normal objects
-    // ------------------------------------------------------------
-    shader.bind();
-
-    shader.setUniform("u_model", model);
-    shader.setUniform("u_view_projection", viewProjection);
-
-    switch (active_shader.type_hint) {
-    case WIREFRAME:
-      shader.setUniform("u_color", color, false);
-      drawWireframe(shader);
-      break;
-    case NORMALS:
-      drawNormals(shader);
-      break;
-    case PHONG: {
-      Vector3D cam_pos = camera.position();
-      Vector3f cel_light_dir = m_cel_light_dir.normalized();
-
-      shader.setUniform("u_color", color, false);
-      shader.setUniform("u_cam_pos", Vector3f(cam_pos.x, cam_pos.y, cam_pos.z), false);
-      shader.setUniform("u_light_pos", Vector3f(0.5, 2, 2), false);
-      shader.setUniform("u_light_intensity", Vector3f(3, 3, 3), false);
-      shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
-      shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
-      shader.setUniform("u_cel_light_dir", cel_light_dir, false);
-      shader.setUniform("u_cel_light_pos", m_cel_light_pos, false);
-      shader.setUniform("u_cel_light_type", (float)m_cel_light_type, false);
-      shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
-      shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
-      shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
-      shader.setUniform("u_cel_highlight_strength", m_cel_highlight_strength, false);
-      shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
-      shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
-      shader.setUniform("u_cel_bands", m_cel_bands, false);
-      shader.setUniform("u_cel_flat", 0.0f, false);
-      shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
-      shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
-      shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
-      shader.setUniform("u_texture_4_size", Vector2f(m_gl_texture_4_size.x, m_gl_texture_4_size.y), false);
-      // Textures
-      shader.setUniform("u_texture_1", 1, false);
-      shader.setUniform("u_texture_2", 2, false);
-      shader.setUniform("u_texture_3", 3, false);
-      shader.setUniform("u_texture_4", 4, false);
-
-      shader.setUniform("u_normal_scaling", m_normal_scaling, false);
-      shader.setUniform("u_height_scaling", m_height_scaling, false);
-
-      shader.setUniform("u_texture_cubemap", 5, false);
-
-      shader.setUniform("u_use_mtl_style", 0.0f, false);
-
-      shader.setUniform("u_light_view_projection", lightViewProjection, false);
-      shader.setUniform("u_shadow_map", 6, false);
-      shader.setUniform("u_shadow_bias", 0.0025f, false);
-      shader.setUniform("u_shadow_strength", 0.65f, false);
-
-
-
-      glActiveTexture(GL_TEXTURE1);
-      glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
-
-      glActiveTexture(GL_TEXTURE2);
-      glBindTexture(GL_TEXTURE_2D, m_gl_texture_2);
-
-      glActiveTexture(GL_TEXTURE3);
-      glBindTexture(GL_TEXTURE_2D, m_gl_texture_3);
-
-      glActiveTexture(GL_TEXTURE4);
-      glBindTexture(GL_TEXTURE_2D, m_gl_texture_4);
-
-      glActiveTexture(GL_TEXTURE5);
-      glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
-
-      glActiveTexture(GL_TEXTURE6);
-      glBindTexture(GL_TEXTURE_2D, m_shadow_depth_tex);
-
-      drawPhong(shader);
-    } break;
-    }
-
-    for (CollisionObject* co : *collision_objects) {
-        bool use_mtl_style = false;
-
-        // 你需要自己根据对象类型/数据判断
-        // 例如：如果它是 mesh 并且成功加载了 mtl，就设成 true
-        if (co->isMesh() && co->hasMtl()) {
-            use_mtl_style = true;
-        }
-
-        shader.setUniform("u_use_mtl_style", use_mtl_style ? 1.0f : 0.0f, false);
-
-        co->render(shader);
-    }
-
-    if (m_cel_light_type == 1) {
-      shader.setUniform("u_color", nanogui::Color(1.0f, 0.9f, 0.2f, 1.0f), false);
-      shader.setUniform("u_cel_flat", 1.0f, false);
-      Vector3D lp(m_cel_light_pos.x(), m_cel_light_pos.y(), m_cel_light_pos.z());
-      m_light_sphere.draw_sphere(shader, lp, 0.06);
-      shader.setUniform("u_cel_flat", 0.0f, false);
-      shader.setUniform("u_color", color, false);
-    }
-
-    // Done with offscreen pass
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  } else {
-    // Fallback: no offscreen FBO, render directly to default framebuffer as before
-    const UserShader& active_shader = shaders[active_shader_idx];
-    GLShader &shader = *active_shader.nanogui_shader;
-    shader.bind();
-
-    Matrix4f model; model.setIdentity();
-    Matrix4f view = getViewMatrix();
-    Matrix4f projection = getProjectionMatrix();
-    Matrix4f viewProjection = projection * view;
-    shader.setUniform("u_model", model);
-    shader.setUniform("u_view_projection", viewProjection);
-
-    switch (active_shader.type_hint) {
-    case WIREFRAME:
-      shader.setUniform("u_color", color, false);
-      drawWireframe(shader);
-      break;
-    case NORMALS:
-      drawNormals(shader);
-      break;
-    case PHONG:
-      {
-        Vector3D cam_pos = camera.position();
-        Vector3f cel_light_dir = m_cel_light_dir.normalized();
-
-        shader.setUniform("u_color", color, false);
-        shader.setUniform("u_cam_pos", Vector3f(cam_pos.x, cam_pos.y, cam_pos.z), false);
-        shader.setUniform("u_light_pos", Vector3f(0.5, 2, 2), false);
-        shader.setUniform("u_light_intensity", Vector3f(3, 3, 3), false);
-        shader.setUniform("u_cel_dark_color", colorToVec3(m_cel_dark_color), false);
-        shader.setUniform("u_cel_bright_color", colorToVec3(m_cel_bright_color), false);
-        shader.setUniform("u_cel_light_dir", cel_light_dir, false);
-        shader.setUniform("u_cel_light_pos", m_cel_light_pos, false);
-        shader.setUniform("u_cel_light_type", (float)m_cel_light_type, false);
-        shader.setUniform("u_cel_dark_threshold", m_cel_dark_threshold, false);
-        shader.setUniform("u_cel_bright_threshold", m_cel_bright_threshold, false);
-        shader.setUniform("u_cel_shadow_strength", m_cel_shadow_strength, false);
-        shader.setUniform("u_cel_highlight_strength", m_cel_highlight_strength, false);
-        shader.setUniform("u_cel_pattern_scale", m_cel_pattern_scale, false);
-        shader.setUniform("u_cel_pattern_radius", m_cel_pattern_radius, false);
-        shader.setUniform("u_cel_bands", m_cel_bands, false);
-        shader.setUniform("u_cel_flat", 0.0f, false);
-        shader.setUniform("u_texture_1_size", Vector2f(m_gl_texture_1_size.x, m_gl_texture_1_size.y), false);
-        shader.setUniform("u_texture_2_size", Vector2f(m_gl_texture_2_size.x, m_gl_texture_2_size.y), false);
-        shader.setUniform("u_texture_3_size", Vector2f(m_gl_texture_3_size.x, m_gl_texture_3_size.y), false);
-        shader.setUniform("u_texture_4_size", Vector2f(m_gl_texture_4_size.x, m_gl_texture_4_size.y), false);
-        shader.setUniform("u_texture_1", 1, false);
-        shader.setUniform("u_texture_2", 2, false);
-        shader.setUniform("u_texture_3", 3, false);
-        shader.setUniform("u_texture_4", 4, false);
-        shader.setUniform("u_normal_scaling", m_normal_scaling, false);
-        shader.setUniform("u_height_scaling", m_height_scaling, false);
-        shader.setUniform("u_texture_cubemap", 5, false);
-
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, m_gl_texture_1);
-
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, m_gl_texture_2);
-
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, m_gl_texture_3);
-
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, m_gl_texture_4);
-
-        glActiveTexture(GL_TEXTURE5);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, m_gl_cubemap_tex);
-        drawPhong(shader);
-      }
-      break;
-    }
-
-    for (CollisionObject* co : *collision_objects) {
-        bool use_mtl_style = co->isMesh() && co->hasMtl();
-
-        shader.setUniform("u_use_mtl_style", use_mtl_style ? 1.0f : 0.0f, false);
-
-        // fallback color for non-mesh / no-mtl objects
-        if (!use_mtl_style) {
-            shader.setUniform("u_color", color, false);
-        }
-
-        co->render(shader);
-    }
-
-    if (m_cel_light_type == 1) {
-      shader.setUniform("u_color", nanogui::Color(1.0f, 0.9f, 0.2f, 1.0f), false);
-      shader.setUniform("u_cel_flat", 1.0f, false);
-      Vector3D lp(m_cel_light_pos.x(), m_cel_light_pos.y(), m_cel_light_pos.z());
-      m_light_sphere.draw_sphere(shader, lp, 0.06);
-      shader.setUniform("u_cel_flat", 0.0f, false);
-      shader.setUniform("u_color", color, false);
-    }
+    renderSceneGeometry(shader, active_shader,
+                        active_shader.display_name == "Cel",
+                        viewProjection, lightViewProjection);
+    return;
   }
 
-  // --- Pass 2: composite / edge post-process to default framebuffer ---
-  if (m_offscreen_fbo != 0) {
-    // If edge drawing is disabled, simply blit the color attachment to the
-    // default framebuffer. Otherwise run the fullscreen edge shader (if
-    // available) or fall back to blit.
-    if (!m_edge_enabled) {
-      glBindFramebuffer(GL_READ_FRAMEBUFFER, m_offscreen_fbo);
-      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-      glReadBuffer(GL_COLOR_ATTACHMENT0);
-      glBlitFramebuffer(0, 0, screen_w, screen_h, 0, 0, screen_w, screen_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    } else if (m_fullscreen_edge_shader) {
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
-      glViewport(0, 0, screen_w, screen_h);
-      glDisable(GL_DEPTH_TEST);
-      // Clear default framebuffer color
-      glClearColor(m_background_color[0], m_background_color[1], m_background_color[2], m_background_color[3]);
-      glClear(GL_COLOR_BUFFER_BIT);
-
-      GLShader &edge = *m_fullscreen_edge_shader;
-      edge.bind();
-
-      // Bind G-buffer textures
-      glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D, m_scene_color_tex);
-      glActiveTexture(GL_TEXTURE1);
-      glBindTexture(GL_TEXTURE_2D, m_scene_normal_tex);
-      glActiveTexture(GL_TEXTURE2);
-      glBindTexture(GL_TEXTURE_2D, m_scene_depth_tex);
-
-      edge.setUniform("u_colorTex", 0, false);
-      edge.setUniform("u_normalTex", 1, false);
-      edge.setUniform("u_depthTex", 2, false);
-
-      edge.setUniform("u_depth_edge_thickness", m_depth_edge_thickness, false);
-      edge.setUniform("u_normal_edge_thickness", m_normal_edge_thickness, false);
-      edge.setUniform("u_depth_threshold", m_edge_depth_threshold, false);
-      edge.setUniform("u_normal_threshold", m_edge_normal_threshold, false);
-      edge.setUniform("u_edge_strength", m_edge_strength, false);
-      edge.setUniform("u_edge_color", colorToVec3(m_edge_line_color), false);
-
-      drawFullscreenQuad();
-
-      // unbind textures
-      glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, 0);
-      glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, 0);
-      glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, 0);
-    } else {
-      // Fallback: no edge shader available -> blit color
-      glBindFramebuffer(GL_READ_FRAMEBUFFER, m_offscreen_fbo);
-      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-      glReadBuffer(GL_COLOR_ATTACHMENT0);
-      glBlitFramebuffer(0, 0, screen_w, screen_h, 0, 0, screen_w, screen_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  if (m_compare_enabled) {
+    double compare_aspect = -1.0;
+    if (m_compare_layout == 1) {
+      compare_aspect = std::max(1, screen_w / 2) / (double)std::max(1, screen_h);
     }
+    renderSceneToOffscreen(cel_shader, cel_shader.display_name == "Cel",
+                           lightViewProjection, compare_aspect);
+    renderEdgeComposite(m_cel_composite_fbo);
+    renderBaselineToFramebuffer(compare_aspect);
+    renderCompareComposite();
+  } else {
+    renderSceneToOffscreen(active_shader, active_shader.display_name == "Cel",
+                           lightViewProjection);
+    renderEdgeComposite(0);
   }
 }
 
@@ -1161,10 +1228,73 @@ void ClothSimulator::initFramebuffer() {
         std::cout << "Offscreen framebuffer is not complete!" << std::endl;
     }
 
+    glGenFramebuffers(1, &m_cel_composite_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_cel_composite_fbo);
+    glGenTextures(1, &m_cel_composite_tex);
+    glBindTexture(GL_TEXTURE_2D, m_cel_composite_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, screen_w, screen_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_cel_composite_tex, 0);
+    GLenum celBuf = GL_COLOR_ATTACHMENT0;
+    glDrawBuffers(1, &celBuf);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cout << "Cel composite framebuffer is not complete!" << std::endl;
+    }
+
+    glGenFramebuffers(1, &m_baseline_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_baseline_fbo);
+    glGenTextures(1, &m_baseline_color_tex);
+    glBindTexture(GL_TEXTURE_2D, m_baseline_color_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, screen_w, screen_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_baseline_color_tex, 0);
+
+    glGenTextures(1, &m_baseline_depth_tex);
+    glBindTexture(GL_TEXTURE_2D, m_baseline_depth_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, screen_w, screen_h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_baseline_depth_tex, 0);
+    GLenum baselineBuf = GL_COLOR_ATTACHMENT0;
+    glDrawBuffers(1, &baselineBuf);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cout << "Baseline framebuffer is not complete!" << std::endl;
+    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void ClothSimulator::destroyFramebuffer() {
+    if (m_baseline_depth_tex != 0) {
+        glDeleteTextures(1, &m_baseline_depth_tex);
+        m_baseline_depth_tex = 0;
+    }
+    if (m_baseline_color_tex != 0) {
+        glDeleteTextures(1, &m_baseline_color_tex);
+        m_baseline_color_tex = 0;
+    }
+    if (m_baseline_fbo != 0) {
+        glDeleteFramebuffers(1, &m_baseline_fbo);
+        m_baseline_fbo = 0;
+    }
+    if (m_cel_composite_tex != 0) {
+        glDeleteTextures(1, &m_cel_composite_tex);
+        m_cel_composite_tex = 0;
+    }
+    if (m_cel_composite_fbo != 0) {
+        glDeleteFramebuffers(1, &m_cel_composite_fbo);
+        m_cel_composite_fbo = 0;
+    }
     if (m_scene_color_tex != 0) {
         glDeleteTextures(1, &m_scene_color_tex);
         m_scene_color_tex = 0;
@@ -1242,17 +1372,22 @@ void ClothSimulator::drawFullscreenQuad() {
 void ClothSimulator::resetCamera() { camera.copy_placement(canonicalCamera); }
 
 Matrix4f ClothSimulator::getProjectionMatrix() {
+  return getProjectionMatrixForAspect(camera.aspect_ratio());
+}
+
+Matrix4f ClothSimulator::getProjectionMatrixForAspect(double aspect) {
   Matrix4f perspective;
   perspective.setZero();
 
   double cam_near = camera.near_clip();
   double cam_far = camera.far_clip();
+  aspect = std::max(1e-6, aspect);
 
   double theta = camera.v_fov() * PI / 360;
   double range = cam_far - cam_near;
   double invtan = 1. / tanf(theta);
 
-  perspective(0, 0) = invtan / camera.aspect_ratio();
+  perspective(0, 0) = invtan / aspect;
   perspective(1, 1) = invtan;
   perspective(2, 2) = -(cam_near + cam_far) / range;
   perspective(3, 2) = -1;
@@ -1713,12 +1848,20 @@ void ClothSimulator::initGUI(Screen *screen) {
   
   window = new Window(screen, "Appearance");
   window->setPosition(Vector2i(15, 15));
-  window->setLayout(new GroupLayout(15, 6, 14, 5));
+  window->setFixedSize(Vector2i(260, std::max(360, default_window_size(1) - 30)));
+  window->setLayout(new GroupLayout(10, 6, 10, 5));
+
+  VScrollPanel *appearance_scroll = new VScrollPanel(window);
+  appearance_scroll->setFixedSize(
+      Vector2i(240, std::max(300, default_window_size(1) - 75)));
+
+  Widget *appearance = new Widget(appearance_scroll);
+  appearance->setLayout(new GroupLayout(15, 6, 14, 5));
 
   // Appearance
 
   {
-    ComboBox *cb = new ComboBox(window, shaders_combobox_names);
+    ComboBox *cb = new ComboBox(appearance, shaders_combobox_names);
     cb->setFontSize(14);
     cb->setCallback(
         [this, screen](int idx) { active_shader_idx = idx; });
@@ -1730,20 +1873,20 @@ void ClothSimulator::initGUI(Screen *screen) {
 
   // Shader Parameters
 
-  new Label(window, "Color", "sans-bold");
+  new Label(appearance, "Color", "sans-bold");
 
   {
-    ColorWheel *cw = new ColorWheel(window, color);
+    ColorWheel *cw = new ColorWheel(appearance, color);
     cw->setColor(this->color);
     cw->setCallback(
         [this](const nanogui::Color &color) { this->color = color; });
     refreshes->push_back([cw, this] { cw->setColor(this->color); });
   }
 
-  new Label(window, "Parameters", "sans-bold");
+  new Label(appearance, "Parameters", "sans-bold");
 
   {
-    Widget *panel = new Widget(window);
+    Widget *panel = new Widget(appearance);
     GridLayout *layout =
         new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
     layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
@@ -1775,10 +1918,10 @@ void ClothSimulator::initGUI(Screen *screen) {
 
   // Cel shader live controls
 
-  new Label(window, "Cel Shader", "sans-bold");
+  new Label(appearance, "Cel Shader", "sans-bold");
 
   {
-    Widget *panel = new Widget(window);
+    Widget *panel = new Widget(appearance);
     GridLayout *layout =
         new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
     layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
@@ -1907,9 +2050,9 @@ void ClothSimulator::initGUI(Screen *screen) {
   // Cel preset save/load buttons
 
   // Edge controls
-  new Label(window, "Edge", "sans-bold");
+  new Label(appearance, "Edge", "sans-bold");
   {
-    Widget *panel = new Widget(window);
+    Widget *panel = new Widget(appearance);
     GridLayout *layout =
         new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
     layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
@@ -1956,10 +2099,167 @@ void ClothSimulator::initGUI(Screen *screen) {
     edge_picker->setCallback([this](const nanogui::Color &c) { m_edge_line_color = c; });
   }
 
-  // Background color picker
-  new Label(window, "Background", "sans-bold");
+  new Label(appearance, "Mesh", "sans-bold");
   {
-    Widget *panel = new Widget(window);
+    Widget *panel = new Widget(appearance);
+    GridLayout *layout =
+        new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
+    layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
+    layout->setSpacing(0, 10);
+    panel->setLayout(layout);
+
+    auto add_mesh_float = [panel](const std::string &label, float *target,
+                                  float step) {
+      new Label(panel, label, "sans-bold");
+      FloatBox<float> *fb = new FloatBox<float>(panel);
+      fb->setEditable(true);
+      fb->setFixedSize(Vector2i(100, 20));
+      fb->setFontSize(14);
+      fb->setValue(*target);
+      fb->setValueIncrement(step);
+      fb->setSpinnable(true);
+      fb->setCallback([target](float value) { *target = value; });
+    };
+
+    add_mesh_float("Scale x :", &m_gui_mesh_scale.x(), 0.1f);
+    add_mesh_float("Scale y :", &m_gui_mesh_scale.y(), 0.1f);
+    add_mesh_float("Scale z :", &m_gui_mesh_scale.z(), 0.1f);
+    add_mesh_float("Trans x :", &m_gui_mesh_translate.x(), 0.1f);
+    add_mesh_float("Trans y :", &m_gui_mesh_translate.y(), 0.1f);
+    add_mesh_float("Trans z :", &m_gui_mesh_translate.z(), 0.1f);
+
+    new Label(panel, "Friction :", "sans-bold");
+    FloatBox<float> *friction_box = new FloatBox<float>(panel);
+    friction_box->setEditable(true);
+    friction_box->setFixedSize(Vector2i(100, 20));
+    friction_box->setFontSize(14);
+    friction_box->setValue(m_gui_mesh_friction);
+    friction_box->setMinValue(0.0f);
+    friction_box->setMaxValue(1.0f);
+    friction_box->setValueIncrement(0.05f);
+    friction_box->setSpinnable(true);
+    friction_box->setCallback([this](float value) {
+      m_gui_mesh_friction = std::max(0.0f, std::min(1.0f, value));
+    });
+
+    new Label(panel, "Collide :", "sans-bold");
+    Button *mesh_collide_btn = new Button(panel, m_mesh_collision_enabled ? "On" : "Off");
+    mesh_collide_btn->setFlags(Button::ToggleButton);
+    mesh_collide_btn->setPushed(m_mesh_collision_enabled);
+    mesh_collide_btn->setFixedSize(Vector2i(100, 20));
+    mesh_collide_btn->setFontSize(14);
+    mesh_collide_btn->setChangeCallback([this, mesh_collide_btn](bool state) {
+      setMeshCollisionEnabled(state);
+      mesh_collide_btn->setCaption(state ? "On" : "Off");
+    });
+
+    new Label(panel, "Load OBJ :", "sans-bold");
+    Button *load_mesh_btn = new Button(panel, "Browse");
+    load_mesh_btn->setFixedSize(Vector2i(100, 20));
+    load_mesh_btn->setFontSize(14);
+
+    new Label(panel, "Status :", "sans-bold");
+    Label *mesh_status = new Label(panel, "Ready", "sans");
+    mesh_status->setFixedWidth(100);
+    mesh_status->setFontSize(12);
+
+    load_mesh_btn->setCallback([this, mesh_status] {
+      std::string path = nanogui::file_dialog({{"obj", "Wavefront OBJ"}}, false);
+      if (path.empty()) {
+        return;
+      }
+
+      Vector3D scale(m_gui_mesh_scale.x(), m_gui_mesh_scale.y(), m_gui_mesh_scale.z());
+      Vector3D translate(m_gui_mesh_translate.x(), m_gui_mesh_translate.y(),
+                         m_gui_mesh_translate.z());
+      bool ok = loadRuntimeMesh(path, m_gui_mesh_friction, scale, translate);
+
+      size_t slash = path.find_last_of("/\\");
+      std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+      if (name.size() > 18) {
+        name = name.substr(0, 15) + "...";
+      }
+      mesh_status->setCaption(ok ? name : "Load failed");
+    });
+  }
+
+  new Label(appearance, "Compare", "sans-bold");
+  {
+    Widget *panel = new Widget(appearance);
+    GridLayout *layout =
+        new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
+    layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
+    layout->setSpacing(0, 10);
+    panel->setLayout(layout);
+
+    new Label(panel, "Split view :", "sans-bold");
+    Button *compare_btn = new Button(panel, m_compare_enabled ? "On" : "Off");
+    compare_btn->setFlags(Button::ToggleButton);
+    compare_btn->setPushed(m_compare_enabled);
+    compare_btn->setFixedSize(Vector2i(100, 20));
+    compare_btn->setFontSize(14);
+    compare_btn->setChangeCallback([this, compare_btn](bool state) {
+      m_compare_enabled = state;
+      compare_btn->setCaption(state ? "On" : "Off");
+    });
+
+    new Label(panel, "Layout :", "sans-bold");
+    ComboBox *layout_cb = new ComboBox(panel, {"Wipe", "Side-by-side"});
+    layout_cb->setSelectedIndex(m_compare_layout);
+    layout_cb->setFixedSize(Vector2i(100, 20));
+    layout_cb->setFontSize(14);
+    layout_cb->setCallback([this](int idx) { m_compare_layout = idx; });
+
+    new Label(panel, "Boundary :", "sans-bold");
+    {
+      Widget *row = new Widget(panel);
+      row->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 4));
+
+      Slider *slider = new Slider(row);
+      slider->setValue(m_compare_split);
+      slider->setFixedWidth(70);
+
+      TextBox *value = new TextBox(row);
+      value->setFixedWidth(26);
+      value->setFontSize(12);
+      value->setValue(std::to_string((int)(m_compare_split * 100.0f)));
+
+      slider->setCallback([this, value](float v) {
+        m_compare_split = v;
+        value->setValue(std::to_string((int)(v * 100.0f)));
+      });
+    }
+
+    new Label(panel, "Animate :", "sans-bold");
+    Button *anim_btn = new Button(panel, m_compare_animate ? "On" : "Off");
+    anim_btn->setFlags(Button::ToggleButton);
+    anim_btn->setPushed(m_compare_animate);
+    anim_btn->setFixedSize(Vector2i(100, 20));
+    anim_btn->setFontSize(14);
+    anim_btn->setChangeCallback([this, anim_btn](bool state) {
+      m_compare_animate = state;
+      anim_btn->setCaption(state ? "On" : "Off");
+    });
+
+    new Label(panel, "Anim speed :", "sans-bold");
+    FloatBox<float> *speed_box = new FloatBox<float>(panel);
+    speed_box->setEditable(true);
+    speed_box->setFixedSize(Vector2i(100, 20));
+    speed_box->setFontSize(14);
+    speed_box->setValue(m_compare_anim_speed);
+    speed_box->setMinValue(0.0f);
+    speed_box->setValueIncrement(0.1f);
+    speed_box->setSpinnable(true);
+    speed_box->setCallback([this](float value) {
+      m_compare_anim_speed = std::max(0.0f, value);
+    });
+
+  }
+
+  // Background color picker
+  new Label(appearance, "Background", "sans-bold");
+  {
+    Widget *panel = new Widget(appearance);
     GridLayout *layout = new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
     layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
     layout->setSpacing(0, 10);
@@ -1974,7 +2274,7 @@ void ClothSimulator::initGUI(Screen *screen) {
   }
 
   {
-    Widget *panel = new Widget(window);
+    Widget *panel = new Widget(appearance);
     panel->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 4));
 
     Button *save_btn = new Button(panel, "Save");

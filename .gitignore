@@ -25,6 +25,8 @@ build.ninja
 # Compiled objects and local binaries
 *.o
 *.obj
+!src/scene/*.obj
+!src/scene/**/*.obj
 *.d
 *.dSYM/
 *.so
@@ -46,3 +48,4 @@ build.ninja
 .DS_Store
 Thumbs.db
 .cache/
+.inspiration/

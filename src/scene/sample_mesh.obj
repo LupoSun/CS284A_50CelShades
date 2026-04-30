@@ -1,0 +1,25 @@
+mtllib sample_mesh.mtl
+o sample_mesh
+
+v -0.5 0.0 -0.5
+v  0.5 0.0 -0.5
+v  0.5 0.0  0.5
+v -0.5 0.0  0.5
+v -0.5 0.6 -0.5
+v  0.5 0.6 -0.5
+v  0.5 0.6  0.5
+v -0.5 0.6  0.5
+
+usemtl dark_base
+f 1 4 3 2
+
+usemtl top_gold
+f 5 6 7 8
+
+usemtl warm_side
+f 1 2 6 5
+f 4 8 7 3
+
+usemtl cool_side
+f 2 3 7 6
+f 1 5 8 4

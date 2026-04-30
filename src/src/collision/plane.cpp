@@ -63,6 +63,7 @@ void Plane::render(GLShader &shader) {
 
   MatrixXf positions(3, 4);
   MatrixXf normals(3, 4);
+  MatrixXf tangents(4, 4);
 
   positions.col(0) << sPoint + half * (sCross + sParallel);
   positions.col(1) << sPoint + half * (sCross - sParallel);
@@ -73,6 +74,10 @@ void Plane::render(GLShader &shader) {
   normals.col(1) << sNormal;
   normals.col(2) << sNormal;
   normals.col(3) << sNormal;
+
+  for (int i = 0; i < 4; ++i) {
+    tangents.col(i) << sParallel.x(), sParallel.y(), sParallel.z(), 0.0f;
+  }
 
   float uvScale = (float)length;
   MatrixXf uvs(2, 4);
@@ -87,6 +92,9 @@ void Plane::render(GLShader &shader) {
   }
   if (shader.attrib("in_uv", false) != -1) {
     shader.uploadAttrib("in_uv", uvs);
+  }
+  if (shader.attrib("in_tangent", false) != -1) {
+    shader.uploadAttrib("in_tangent", tangents, false);
   }
 
   shader.drawArray(GL_TRIANGLE_STRIP, 0, 4);

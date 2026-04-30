@@ -13,12 +13,13 @@
     "num_height_points": 50,
     "thickness": 0.0095
   },
-
   "meshes": [
     {
-        // replace this with your mesh path. The .mtl path should be in the same directory and have the same name as the .obj file.
-        "path": "E:/Projects/26Spring_CS284A/Project/CS284A_50CelShades/src/scene/test_mesh.obj",
-        "friction": 0.0
+      "path": "sample_mesh.obj",
+      "friction": 0.2,
+      "scale": [0.8, 0.35, 0.8],
+      "translate": [0.75, 0.0, 0.35],
+      "collide": false
     }
   ]
 }

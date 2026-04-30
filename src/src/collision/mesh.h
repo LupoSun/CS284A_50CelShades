@@ -14,15 +14,21 @@ using namespace std;
 
 class Mesh : public CollisionObject {
 public:
-    Mesh(const string& path, double friction = 0.0);
+    Mesh(const string& path, double friction = 0.0,
+         const Vector3D& scale = Vector3D(1.0, 1.0, 1.0),
+         const Vector3D& translate = Vector3D(0.0, 0.0, 0.0),
+         bool collision_enabled = false);
 
     void collide(PointMass& pm) override;
     void render(GLShader& shader) override;
+    bool loaded() const { return vertex_count > 0; }
 
     bool m_has_mtl = false;
 
     virtual bool isMesh() const override { return true; }
     virtual bool hasMtl() const override { return m_has_mtl; }
+    virtual bool collisionEnabled() const override { return m_collision_enabled; }
+    virtual void setCollisionEnabled(bool enabled) override { m_collision_enabled = enabled; }
 
 private:
     struct ObjIndex {
@@ -40,6 +46,15 @@ private:
         string material_name;
     };
 
+    struct CachedTriangle {
+        Vector3D p0;
+        Vector3D p1;
+        Vector3D p2;
+        Vector3D normal;
+        Vector3D bbox_min;
+        Vector3D bbox_max;
+    };
+
     struct UVCoord {
         double u;
         double v;
@@ -50,15 +65,20 @@ private:
 
     string path;
     double friction;
+    Vector3D scale;
+    Vector3D translate;
+    bool m_collision_enabled;
 
     vector<Vector3D> obj_positions;
     vector<Vector3D> obj_normals;
     vector<UVCoord> obj_uvs;
     vector<Triangle> obj_triangles;
+    vector<CachedTriangle> collision_triangles;
 
     nanogui::MatrixXf positions;
     nanogui::MatrixXf normals;
     nanogui::MatrixXf uvs;
+    nanogui::MatrixXf tangents;
 
     int vertex_count;
 
@@ -66,6 +86,8 @@ private:
     ObjIndex parseObjIndex(const string& token);
     void buildRenderBuffers();
     Vector3D computeFaceNormal(const Vector3D& a, const Vector3D& b, const Vector3D& c);
+    bool pointInTriangle(const Vector3D& p, const CachedTriangle& tri) const;
+    bool segmentIntersectsAABB(const Vector3D& a, const Vector3D& b, const CachedTriangle& tri) const;
 
     unordered_map<string, Vector3D> material_colors;
 

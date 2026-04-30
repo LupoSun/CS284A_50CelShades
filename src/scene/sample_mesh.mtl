@@ -1,0 +1,11 @@
+newmtl warm_side
+Kd 0.82 0.33 0.22
+
+newmtl cool_side
+Kd 0.16 0.45 0.72
+
+newmtl top_gold
+Kd 0.95 0.72 0.22
+
+newmtl dark_base
+Kd 0.18 0.16 0.18
