@@ -29,6 +29,7 @@ public:
     virtual bool hasMtl() const override { return m_has_mtl; }
     virtual bool collisionEnabled() const override { return m_collision_enabled; }
     virtual void setCollisionEnabled(bool enabled) override { m_collision_enabled = enabled; }
+    virtual bool bounds(Vector3D& min_bound, Vector3D& max_bound) const override;
 
 private:
     struct ObjIndex {
@@ -68,6 +69,9 @@ private:
     Vector3D scale;
     Vector3D translate;
     bool m_collision_enabled;
+    bool m_has_bounds = false;
+    Vector3D m_bounds_min;
+    Vector3D m_bounds_max;
 
     vector<Vector3D> obj_positions;
     vector<Vector3D> obj_normals;

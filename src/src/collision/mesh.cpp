@@ -170,6 +170,15 @@ void Mesh::render(GLShader& shader) {
     shader.drawArray(GL_TRIANGLES, 0, vertex_count);
 }
 
+bool Mesh::bounds(Vector3D& min_bound, Vector3D& max_bound) const {
+    if (!m_has_bounds) {
+        return false;
+    }
+    min_bound = m_bounds_min;
+    max_bound = m_bounds_max;
+    return true;
+}
+
 string Mesh::getDirectory(const string& filepath) {
     size_t slash_pos = filepath.find_last_of("/\\");
 
@@ -403,6 +412,7 @@ bool Mesh::segmentIntersectsAABB(
 
 void Mesh::buildRenderBuffers() {
     vertex_count = (int)obj_triangles.size() * 3;
+    m_has_bounds = false;
 
     positions = MatrixXf(4, vertex_count);
     normals = MatrixXf(4, vertex_count);
@@ -429,6 +439,29 @@ void Mesh::buildRenderBuffers() {
         Vector3D p0 = obj_positions[tri.a.v];
         Vector3D p1 = obj_positions[tri.b.v];
         Vector3D p2 = obj_positions[tri.c.v];
+
+        Vector3D tri_min(
+            min3(p0.x, p1.x, p2.x),
+            min3(p0.y, p1.y, p2.y),
+            min3(p0.z, p1.z, p2.z));
+        Vector3D tri_max(
+            max3(p0.x, p1.x, p2.x),
+            max3(p0.y, p1.y, p2.y),
+            max3(p0.z, p1.z, p2.z));
+
+        if (!m_has_bounds) {
+            m_bounds_min = tri_min;
+            m_bounds_max = tri_max;
+            m_has_bounds = true;
+        }
+        else {
+            m_bounds_min.x = std::min(m_bounds_min.x, tri_min.x);
+            m_bounds_min.y = std::min(m_bounds_min.y, tri_min.y);
+            m_bounds_min.z = std::min(m_bounds_min.z, tri_min.z);
+            m_bounds_max.x = std::max(m_bounds_max.x, tri_max.x);
+            m_bounds_max.y = std::max(m_bounds_max.y, tri_max.y);
+            m_bounds_max.z = std::max(m_bounds_max.z, tri_max.z);
+        }
 
         Vector3D face_normal = computeFaceNormal(p0, p1, p2);
 

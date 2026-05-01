@@ -14,8 +14,14 @@ public:
       : origin(origin), radius(radius), radius2(radius * radius),
         friction(friction), m_sphere_mesh(Misc::SphereMesh(num_lat, num_lon)) {}
 
-  void render(GLShader &shader);
-  void collide(PointMass &pm);
+  void render(GLShader &shader) override;
+  void collide(PointMass &pm) override;
+  bool bounds(Vector3D &min_bound, Vector3D &max_bound) const override {
+    Vector3D r(radius, radius, radius);
+    min_bound = origin - r;
+    max_bound = origin + r;
+    return true;
+  }
 
 private:
   Vector3D origin;

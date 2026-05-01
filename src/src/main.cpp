@@ -254,7 +254,12 @@ void incompleteObjectError(const char *object, const char *attribute) {
 bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp,
                          vector<CollisionObject *>* objects,
                          int sphere_num_lat, int sphere_num_lon,
-                         const string& project_root) {
+                         const string& project_root,
+                         bool *has_cloth) {
+  if (has_cloth) {
+    *has_cloth = false;
+  }
+
   // Read JSON from file
   ifstream i(filename);
   if (!i.good()) {
@@ -311,6 +316,10 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp,
 
     // Parse object depending on type (cloth, sphere, or plane)
     if (key == KEY_CLOTH) {
+      if (has_cloth) {
+        *has_cloth = true;
+      }
+
       // Cloth
       double width, height;
       int num_width_points, num_height_points;
@@ -670,9 +679,10 @@ int main(int argc, char **argv) {
     file_to_load_from = def_fname.str();
   }
   
+  bool has_cloth = false;
   bool success = loadObjectsFromFile(file_to_load_from, &cloth, &cp, &objects,
                                      sphere_num_lat, sphere_num_lon,
-                                     project_root);
+                                     project_root, &has_cloth);
   if (!success) {
     std::cout << "Warn: Unable to load from file: " << file_to_load_from << std::endl;
   }
@@ -681,14 +691,17 @@ int main(int argc, char **argv) {
 
   createGLContexts();
 
-  // Initialize the Cloth object
-  cloth.buildGrid();
-  cloth.buildClothMesh();
+  if (has_cloth) {
+    cloth.buildGrid();
+    cloth.buildClothMesh();
+  }
 
   // Initialize the ClothSimulator object
   app = new ClothSimulator(project_root, screen);
-  app->loadCloth(&cloth);
-  app->loadClothParameters(&cp);
+  if (has_cloth) {
+    app->loadCloth(&cloth);
+    app->loadClothParameters(&cp);
+  }
   app->loadCollisionObjects(&objects);
   app->init();
 

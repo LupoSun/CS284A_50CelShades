@@ -1,4 +1,5 @@
 #include "iostream"
+#include <algorithm>
 #include <cmath>
 #include <nanogui/nanogui.h>
 
@@ -48,6 +49,30 @@ void Plane::collide(PointMass &pm) {
             pm.position = tangent_point;
         }
     }
+}
+
+bool Plane::bounds(Vector3D &min_bound, Vector3D &max_bound) const {
+  Vector3D u, v;
+  computeTangents(normal, u, v);
+  double half = length / 2.0;
+  Vector3D corners[4] = {
+      point + (u + v) * half,
+      point + (u - v) * half,
+      point + (-u + v) * half,
+      point + (-u - v) * half
+  };
+
+  min_bound = corners[0];
+  max_bound = corners[0];
+  for (int i = 1; i < 4; ++i) {
+    min_bound.x = std::min(min_bound.x, corners[i].x);
+    min_bound.y = std::min(min_bound.y, corners[i].y);
+    min_bound.z = std::min(min_bound.z, corners[i].z);
+    max_bound.x = std::max(max_bound.x, corners[i].x);
+    max_bound.y = std::max(max_bound.y, corners[i].y);
+    max_bound.z = std::max(max_bound.z, corners[i].z);
+  }
+  return true;
 }
 
 void Plane::render(GLShader &shader) {

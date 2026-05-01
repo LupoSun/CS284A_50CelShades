@@ -34,6 +34,17 @@ Vector3f colorToVec3(const nanogui::Color &color) {
   return Vector3f(color[0], color[1], color[2]);
 }
 
+std::string basenameForPath(const std::string &path) {
+  size_t slash = path.find_last_of("/\\");
+  return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+std::string shortenName(const std::string &name, size_t max_len = 18) {
+  if (name.size() <= max_len) return name;
+  if (max_len <= 3) return name.substr(0, max_len);
+  return name.substr(0, max_len - 3) + "...";
+}
+
 } // namespace
 
 Vector3D load_texture(int frame_idx, GLuint handle, const char* where) {
@@ -517,8 +528,8 @@ ClothSimulator::~ClothSimulator() {
   }
 
   if (collision_objects) {
-      for (CollisionObject *co : m_runtime_meshes) {
-          delete co;
+      for (RuntimeMeshEntry &entry : m_runtime_meshes) {
+          delete entry.object;
       }
       m_runtime_meshes.clear();
       if (m_owns_collision_objects) {
@@ -537,7 +548,11 @@ ClothSimulator::~ClothSimulator() {
   }
 }
 
-void ClothSimulator::loadCloth(Cloth *cloth) { this->cloth = cloth; }
+void ClothSimulator::loadCloth(Cloth *cloth) {
+  this->cloth = cloth;
+  m_has_cloth = cloth != nullptr;
+  m_cloth_enabled = m_has_cloth;
+}
 
 void ClothSimulator::loadClothParameters(ClothParameters *cp) { this->cp = cp; }
 
@@ -578,18 +593,27 @@ void ClothSimulator::init() {
   camera_info.nClip = 0.01;
   camera_info.fClip = 10000;
 
-  // Try to intelligently figure out the camera target
+  // Try to intelligently figure out the camera target.
+  Vector3D bounds_min;
+  Vector3D bounds_max;
+  bool have_bounds = computeSceneBounds(bounds_min, bounds_max);
+  CGL::Vector3D target(0.0, 0.0, 0.0);
+  double scene_extent = 4.0;
 
-  Vector3D avg_pm_position(0, 0, 0);
-
-  for (auto &pm : cloth->point_masses) {
-    avg_pm_position += pm.position / cloth->point_masses.size();
+  if (have_bounds) {
+    target = (bounds_min + bounds_max) / 2.0;
+    Vector3D size = bounds_max - bounds_min;
+    scene_extent = std::max(size.x, std::max(size.y, size.z));
+    if (scene_extent < 1e-3) {
+      scene_extent = 4.0;
+    }
   }
 
-  CGL::Vector3D target(avg_pm_position.x, avg_pm_position.y / 2,
-                       avg_pm_position.z);
   CGL::Vector3D c_dir(0., 0., 0.);
-  canonical_view_distance = max(cloth->width, cloth->height) * 0.9;
+  canonical_view_distance = scene_extent * 1.4;
+  if (canonical_view_distance < 2.0) {
+    canonical_view_distance = 2.0;
+  }
   scroll_rate = canonical_view_distance / 10;
 
   view_distance = canonical_view_distance * 2;
@@ -655,6 +679,57 @@ initFullscreenQuad();
 
 bool ClothSimulator::isAlive() { return is_alive; }
 
+bool ClothSimulator::clothActive() const {
+  return m_has_cloth && m_cloth_enabled && cloth != nullptr && cp != nullptr;
+}
+
+bool ClothSimulator::computeSceneBounds(Vector3D &min_bound,
+                                        Vector3D &max_bound) const {
+  bool have_bounds = false;
+
+  if (m_has_cloth && cloth && !cloth->point_masses.empty()) {
+    for (const PointMass &pm : cloth->point_masses) {
+      if (!have_bounds) {
+        min_bound = pm.position;
+        max_bound = pm.position;
+        have_bounds = true;
+      } else {
+        min_bound.x = std::min(min_bound.x, pm.position.x);
+        min_bound.y = std::min(min_bound.y, pm.position.y);
+        min_bound.z = std::min(min_bound.z, pm.position.z);
+        max_bound.x = std::max(max_bound.x, pm.position.x);
+        max_bound.y = std::max(max_bound.y, pm.position.y);
+        max_bound.z = std::max(max_bound.z, pm.position.z);
+      }
+    }
+  }
+
+  if (collision_objects) {
+    for (CollisionObject *co : *collision_objects) {
+      Vector3D obj_min;
+      Vector3D obj_max;
+      if (!co || !co->bounds(obj_min, obj_max)) {
+        continue;
+      }
+
+      if (!have_bounds) {
+        min_bound = obj_min;
+        max_bound = obj_max;
+        have_bounds = true;
+      } else {
+        min_bound.x = std::min(min_bound.x, obj_min.x);
+        min_bound.y = std::min(min_bound.y, obj_min.y);
+        min_bound.z = std::min(min_bound.z, obj_min.z);
+        max_bound.x = std::max(max_bound.x, obj_max.x);
+        max_bound.y = std::max(max_bound.y, obj_max.y);
+        max_bound.z = std::max(max_bound.z, obj_max.z);
+      }
+    }
+  }
+
+  return have_bounds;
+}
+
 int ClothSimulator::shaderIndexByName(const std::string &name) const {
   for (size_t i = 0; i < shaders.size(); ++i) {
     if (shaders[i].display_name == name) return (int)i;
@@ -693,8 +768,66 @@ bool ClothSimulator::loadRuntimeMesh(const std::string &path, double friction,
   }
 
   collision_objects->push_back(mesh);
-  m_runtime_meshes.push_back(mesh);
+  RuntimeMeshEntry entry;
+  entry.display_name = shortenName(basenameForPath(path));
+  entry.object = mesh;
+  m_runtime_meshes.push_back(entry);
+  m_selected_runtime_mesh = (int)m_runtime_meshes.size() - 1;
   setMeshCollisionEnabled(m_mesh_collision_enabled);
+  refreshRuntimeMeshList();
+  return true;
+}
+
+void ClothSimulator::refreshRuntimeMeshList() {
+  if (!m_runtime_mesh_combo) {
+    return;
+  }
+
+  std::vector<std::string> items;
+  if (m_runtime_meshes.empty()) {
+    items.push_back("(none)");
+    m_selected_runtime_mesh = -1;
+  } else {
+    for (const RuntimeMeshEntry &entry : m_runtime_meshes) {
+      items.push_back(entry.display_name);
+    }
+    if (m_selected_runtime_mesh < 0 ||
+        m_selected_runtime_mesh >= (int)m_runtime_meshes.size()) {
+      m_selected_runtime_mesh = 0;
+    }
+  }
+
+  m_runtime_mesh_combo->setItems(items);
+  m_runtime_mesh_combo->setSelectedIndex(
+      m_selected_runtime_mesh >= 0 ? m_selected_runtime_mesh : 0);
+}
+
+bool ClothSimulator::deleteSelectedRuntimeMesh() {
+  if (m_selected_runtime_mesh < 0 ||
+      m_selected_runtime_mesh >= (int)m_runtime_meshes.size()) {
+    return false;
+  }
+
+  RuntimeMeshEntry entry = m_runtime_meshes[m_selected_runtime_mesh];
+  if (collision_objects) {
+    collision_objects->erase(
+        std::remove(collision_objects->begin(), collision_objects->end(),
+                    entry.object),
+        collision_objects->end());
+  }
+
+  delete entry.object;
+  m_runtime_meshes.erase(m_runtime_meshes.begin() + m_selected_runtime_mesh);
+  if (m_runtime_meshes.empty()) {
+    m_selected_runtime_mesh = -1;
+  } else if (m_selected_runtime_mesh >= (int)m_runtime_meshes.size()) {
+    m_selected_runtime_mesh = (int)m_runtime_meshes.size() - 1;
+  }
+
+  if (m_runtime_mesh_status) {
+    m_runtime_mesh_status->setCaption("Deleted");
+  }
+  refreshRuntimeMeshList();
   return true;
 }
 
@@ -718,7 +851,9 @@ void ClothSimulator::renderShadowMap(const Matrix4f &lightViewProjection) {
   shader.setUniform("u_model", model);
   shader.setUniform("u_light_view_projection", lightViewProjection);
 
-  drawPhong(shader);
+  if (clothActive()) {
+    drawPhong(shader);
+  }
 
   if (collision_objects) {
     for (CollisionObject *co : *collision_objects) {
@@ -746,10 +881,14 @@ void ClothSimulator::renderSceneGeometry(
   switch (active_shader.type_hint) {
   case WIREFRAME:
     shader.setUniform("u_color", color, false);
-    drawWireframe(shader);
+    if (clothActive()) {
+      drawWireframe(shader);
+    }
     break;
   case NORMALS:
-    drawNormals(shader);
+    if (clothActive()) {
+      drawNormals(shader);
+    }
     break;
   case PHONG: {
     Vector3D cam_pos = camera.position();
@@ -805,7 +944,9 @@ void ClothSimulator::renderSceneGeometry(
     glActiveTexture(GL_TEXTURE6);
     glBindTexture(GL_TEXTURE_2D, m_shadow_depth_tex);
 
-    drawPhong(shader);
+    if (clothActive()) {
+      drawPhong(shader);
+    }
   } break;
   }
 
@@ -989,7 +1130,7 @@ void ClothSimulator::renderCompareComposite() {
 void ClothSimulator::drawContents() {
   glEnable(GL_DEPTH_TEST);
 
-  if (!is_paused) {
+  if (!is_paused && clothActive()) {
     vector<Vector3D> external_accelerations = {gravity};
 
     for (int i = 0; i < simulation_steps; i++) {
@@ -1056,6 +1197,10 @@ void ClothSimulator::drawContents() {
 }
 
 void ClothSimulator::drawWireframe(GLShader &shader) {
+  if (!clothActive()) {
+    return;
+  }
+
   int num_structural_springs =
       2 * cloth->num_width_points * cloth->num_height_points -
       cloth->num_width_points - cloth->num_height_points;
@@ -1108,6 +1253,10 @@ void ClothSimulator::drawWireframe(GLShader &shader) {
 }
 
 void ClothSimulator::drawNormals(GLShader &shader) {
+  if (!clothActive() || !cloth->clothMesh) {
+    return;
+  }
+
   int num_tris = cloth->clothMesh->triangles.size();
 
   MatrixXf positions(4, num_tris * 3);
@@ -1140,6 +1289,10 @@ void ClothSimulator::drawNormals(GLShader &shader) {
 }
 
 void ClothSimulator::drawPhong(GLShader &shader) {
+  if (!clothActive() || !cloth->clothMesh) {
+    return;
+  }
+
   int num_tris = cloth->clothMesh->triangles.size();
 
   MatrixXf positions(4, num_tris * 3);
@@ -1604,7 +1757,12 @@ bool ClothSimulator::keyCallbackEvent(int key, int scancode, int action,
       break;
     case 'r':
     case 'R':
-      cloth->reset();
+      if (m_has_cloth && cloth) {
+        cloth->reset();
+      }
+      break;
+    case GLFW_KEY_BACKSPACE:
+      deleteSelectedRuntimeMesh();
       break;
     case ' ':
       resetCamera();
@@ -1675,67 +1833,69 @@ void ClothSimulator::initGUI(Screen *screen) {
   window->setPosition(Vector2i(default_window_size(0) - 245, 15));
   window->setLayout(new GroupLayout(15, 6, 14, 5));
 
-  // Spring types
+  if (m_has_cloth && cp) {
+    // Spring types
 
-  new Label(window, "Spring types", "sans-bold");
+    new Label(window, "Spring types", "sans-bold");
 
-  {
-    Button *b = new Button(window, "structural");
-    b->setFlags(Button::ToggleButton);
-    b->setPushed(cp->enable_structural_constraints);
-    b->setFontSize(14);
-    b->setChangeCallback(
-        [this](bool state) { cp->enable_structural_constraints = state; });
+    {
+      Button *b = new Button(window, "structural");
+      b->setFlags(Button::ToggleButton);
+      b->setPushed(cp->enable_structural_constraints);
+      b->setFontSize(14);
+      b->setChangeCallback(
+          [this](bool state) { cp->enable_structural_constraints = state; });
 
-    b = new Button(window, "shearing");
-    b->setFlags(Button::ToggleButton);
-    b->setPushed(cp->enable_shearing_constraints);
-    b->setFontSize(14);
-    b->setChangeCallback(
-        [this](bool state) { cp->enable_shearing_constraints = state; });
+      b = new Button(window, "shearing");
+      b->setFlags(Button::ToggleButton);
+      b->setPushed(cp->enable_shearing_constraints);
+      b->setFontSize(14);
+      b->setChangeCallback(
+          [this](bool state) { cp->enable_shearing_constraints = state; });
 
-    b = new Button(window, "bending");
-    b->setFlags(Button::ToggleButton);
-    b->setPushed(cp->enable_bending_constraints);
-    b->setFontSize(14);
-    b->setChangeCallback(
-        [this](bool state) { cp->enable_bending_constraints = state; });
-  }
+      b = new Button(window, "bending");
+      b->setFlags(Button::ToggleButton);
+      b->setPushed(cp->enable_bending_constraints);
+      b->setFontSize(14);
+      b->setChangeCallback(
+          [this](bool state) { cp->enable_bending_constraints = state; });
+    }
 
-  // Mass-spring parameters
+    // Mass-spring parameters
 
-  new Label(window, "Parameters", "sans-bold");
+    new Label(window, "Parameters", "sans-bold");
 
-  {
-    Widget *panel = new Widget(window);
-    GridLayout *layout =
-        new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
-    layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
-    layout->setSpacing(0, 10);
-    panel->setLayout(layout);
+    {
+      Widget *panel = new Widget(window);
+      GridLayout *layout =
+          new GridLayout(Orientation::Horizontal, 2, Alignment::Middle, 5, 5);
+      layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
+      layout->setSpacing(0, 10);
+      panel->setLayout(layout);
 
-    new Label(panel, "density :", "sans-bold");
+      new Label(panel, "density :", "sans-bold");
 
-    FloatBox<double> *fb = new FloatBox<double>(panel);
-    fb->setEditable(true);
-    fb->setFixedSize(Vector2i(100, 20));
-    fb->setFontSize(14);
-    fb->setValue(cp->density / 10);
-    fb->setUnits("g/cm^2");
-    fb->setSpinnable(true);
-    fb->setCallback([this](float value) { cp->density = (double)(value * 10); });
+      FloatBox<double> *fb = new FloatBox<double>(panel);
+      fb->setEditable(true);
+      fb->setFixedSize(Vector2i(100, 20));
+      fb->setFontSize(14);
+      fb->setValue(cp->density / 10);
+      fb->setUnits("g/cm^2");
+      fb->setSpinnable(true);
+      fb->setCallback([this](float value) { cp->density = (double)(value * 10); });
 
-    new Label(panel, "ks :", "sans-bold");
+      new Label(panel, "ks :", "sans-bold");
 
-    fb = new FloatBox<double>(panel);
-    fb->setEditable(true);
-    fb->setFixedSize(Vector2i(100, 20));
-    fb->setFontSize(14);
-    fb->setValue(cp->ks);
-    fb->setUnits("N/m");
-    fb->setSpinnable(true);
-    fb->setMinValue(0);
-    fb->setCallback([this](float value) { cp->ks = value; });
+      fb = new FloatBox<double>(panel);
+      fb->setEditable(true);
+      fb->setFixedSize(Vector2i(100, 20));
+      fb->setFontSize(14);
+      fb->setValue(cp->ks);
+      fb->setUnits("N/m");
+      fb->setSpinnable(true);
+      fb->setMinValue(0);
+      fb->setCallback([this](float value) { cp->ks = value; });
+    }
   }
 
   // Simulation constants
@@ -1749,6 +1909,18 @@ void ClothSimulator::initGUI(Screen *screen) {
     layout->setColAlignment({Alignment::Maximum, Alignment::Fill});
     layout->setSpacing(0, 10);
     panel->setLayout(layout);
+
+    new Label(panel, "Cloth :", "sans-bold");
+    Button *cloth_btn = new Button(panel, m_has_cloth ? (m_cloth_enabled ? "On" : "Off") : "N/A");
+    cloth_btn->setFlags(Button::ToggleButton);
+    cloth_btn->setPushed(m_cloth_enabled);
+    cloth_btn->setEnabled(m_has_cloth);
+    cloth_btn->setFixedSize(Vector2i(100, 20));
+    cloth_btn->setFontSize(14);
+    cloth_btn->setChangeCallback([this, cloth_btn](bool state) {
+      m_cloth_enabled = state;
+      cloth_btn->setCaption(state ? "On" : "Off");
+    });
 
     new Label(panel, "frames/s :", "sans-bold");
 
@@ -1774,30 +1946,32 @@ void ClothSimulator::initGUI(Screen *screen) {
 
   // Damping slider and textbox
 
-  new Label(window, "Damping", "sans-bold");
+  if (m_has_cloth && cp) {
+    new Label(window, "Damping", "sans-bold");
 
-  {
-    Widget *panel = new Widget(window);
-    panel->setLayout(
-        new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5));
+    {
+      Widget *panel = new Widget(window);
+      panel->setLayout(
+          new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 5));
 
-    Slider *slider = new Slider(panel);
-    slider->setValue(cp->damping);
-    slider->setFixedWidth(105);
+      Slider *slider = new Slider(panel);
+      slider->setValue(cp->damping);
+      slider->setFixedWidth(105);
 
-    TextBox *percentage = new TextBox(panel);
-    percentage->setFixedWidth(75);
-    percentage->setValue(to_string(cp->damping));
-    percentage->setUnits("%");
-    percentage->setFontSize(14);
+      TextBox *percentage = new TextBox(panel);
+      percentage->setFixedWidth(75);
+      percentage->setValue(to_string(cp->damping));
+      percentage->setUnits("%");
+      percentage->setFontSize(14);
 
-    slider->setCallback([percentage](float value) {
-      percentage->setValue(std::to_string(value));
-    });
-    slider->setFinalCallback([&](float value) {
-      cp->damping = (double)value;
-      // cout << "Final slider value: " << (int)(value * 100) << endl;
-    });
+      slider->setCallback([percentage](float value) {
+        percentage->setValue(std::to_string(value));
+      });
+      slider->setFinalCallback([&](float value) {
+        cp->damping = (double)value;
+        // cout << "Final slider value: " << (int)(value * 100) << endl;
+      });
+    }
   }
 
   // Gravity
@@ -2059,6 +2233,21 @@ void ClothSimulator::initGUI(Screen *screen) {
     layout->setSpacing(0, 10);
     panel->setLayout(layout);
 
+    new Label(panel, "Cel edges :", "sans-bold");
+    Button *edge_btn = new Button(panel, m_edge_enabled ? "On" : "Off");
+    edge_btn->setFlags(Button::ToggleButton);
+    edge_btn->setPushed(m_edge_enabled);
+    edge_btn->setFixedSize(Vector2i(100, 20));
+    edge_btn->setFontSize(14);
+    edge_btn->setChangeCallback([this, edge_btn](bool state) {
+      m_edge_enabled = state;
+      edge_btn->setCaption(state ? "On" : "Off");
+    });
+    refreshes->push_back([edge_btn, this] {
+      edge_btn->setPushed(m_edge_enabled);
+      edge_btn->setCaption(m_edge_enabled ? "On" : "Off");
+    });
+
     new Label(panel, "Depth thick :", "sans-bold");
     FloatBox<float>* fb = new FloatBox<float>(panel);
     fb->setEditable(true);
@@ -2069,6 +2258,7 @@ void ClothSimulator::initGUI(Screen *screen) {
     fb->setCallback([this](float value) {
         m_depth_edge_thickness = value;
         });
+    refreshes->push_back([fb, this] { fb->setValue(m_depth_edge_thickness); });
 
     new Label(panel, "Normal thick :", "sans-bold");
     fb = new FloatBox<float>(panel);
@@ -2080,6 +2270,7 @@ void ClothSimulator::initGUI(Screen *screen) {
     fb->setCallback([this](float value) {
         m_normal_edge_thickness = value;
         });
+    refreshes->push_back([fb, this] { fb->setValue(m_normal_edge_thickness); });
 
     // expose background color in same panel? No, add separate control below.
 
@@ -2091,12 +2282,14 @@ void ClothSimulator::initGUI(Screen *screen) {
     fb->setValue(m_edge_strength);
     fb->setSpinnable(true);
     fb->setCallback([this](float value) { m_edge_strength = value; });
+    refreshes->push_back([fb, this] { fb->setValue(m_edge_strength); });
 
     new Label(panel, "Color :", "sans-bold");
     ColorPicker *edge_picker = new ColorPicker(panel, m_edge_line_color);
     edge_picker->setFixedSize(Vector2i(100, 20));
     edge_picker->setFontSize(14);
     edge_picker->setCallback([this](const nanogui::Color &c) { m_edge_line_color = c; });
+    refreshes->push_back([edge_picker, this] { edge_picker->setColor(m_edge_line_color); });
   }
 
   new Label(appearance, "Mesh", "sans-bold");
@@ -2159,11 +2352,29 @@ void ClothSimulator::initGUI(Screen *screen) {
     load_mesh_btn->setFontSize(14);
 
     new Label(panel, "Status :", "sans-bold");
-    Label *mesh_status = new Label(panel, "Ready", "sans");
-    mesh_status->setFixedWidth(100);
-    mesh_status->setFontSize(12);
+    m_runtime_mesh_status = new Label(panel, "Ready", "sans");
+    m_runtime_mesh_status->setFixedWidth(100);
+    m_runtime_mesh_status->setFontSize(12);
 
-    load_mesh_btn->setCallback([this, mesh_status] {
+    new Label(panel, "Loaded mesh :", "sans-bold");
+    m_runtime_mesh_combo = new ComboBox(panel, {"(none)"});
+    m_runtime_mesh_combo->setFixedSize(Vector2i(100, 20));
+    m_runtime_mesh_combo->setFontSize(14);
+    m_runtime_mesh_combo->setCallback([this](int idx) {
+      if (idx >= 0 && idx < (int)m_runtime_meshes.size()) {
+        m_selected_runtime_mesh = idx;
+      } else {
+        m_selected_runtime_mesh = -1;
+      }
+    });
+
+    new Label(panel, "Delete :", "sans-bold");
+    Button *delete_mesh_btn = new Button(panel, "Delete");
+    delete_mesh_btn->setFixedSize(Vector2i(100, 20));
+    delete_mesh_btn->setFontSize(14);
+    delete_mesh_btn->setCallback([this] { deleteSelectedRuntimeMesh(); });
+
+    load_mesh_btn->setCallback([this] {
       std::string path = nanogui::file_dialog({{"obj", "Wavefront OBJ"}}, false);
       if (path.empty()) {
         return;
@@ -2174,13 +2385,12 @@ void ClothSimulator::initGUI(Screen *screen) {
                          m_gui_mesh_translate.z());
       bool ok = loadRuntimeMesh(path, m_gui_mesh_friction, scale, translate);
 
-      size_t slash = path.find_last_of("/\\");
-      std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
-      if (name.size() > 18) {
-        name = name.substr(0, 15) + "...";
+      if (m_runtime_mesh_status) {
+        m_runtime_mesh_status->setCaption(
+            ok ? shortenName(basenameForPath(path)) : "Load failed");
       }
-      mesh_status->setCaption(ok ? name : "Load failed");
     });
+    refreshRuntimeMeshList();
   }
 
   new Label(appearance, "Compare", "sans-bold");
@@ -2297,11 +2507,6 @@ void ClothSimulator::initGUI(Screen *screen) {
       if (!path.empty()) loadCelPreset(path);
     });
 
-    // Update UI when default preset is reloaded
-    refreshes->push_back([this] {
-      if (m_refresh_widgets) m_refresh_widgets();
-    });
-
     Button *hlsl_btn = new Button(panel, "Export HLSL");
     hlsl_btn->setFontSize(14);
     hlsl_btn->setCallback([this] {
@@ -2309,15 +2514,11 @@ void ClothSimulator::initGUI(Screen *screen) {
           {{"shader", "Unity HLSL shader"}}, true);
       if (!path.empty()) exportCelHLSL(path);
     });
-    
-    // Edge enable toggle
-    Button *edge_btn = new Button(panel, "Edge: On");
-    edge_btn->setFlags(Button::ToggleButton);
-    edge_btn->setPushed(m_edge_enabled);
-    edge_btn->setFontSize(14);
-    edge_btn->setChangeCallback([this, edge_btn](bool state) {
-      m_edge_enabled = state;
-      edge_btn->setCaption(state ? "Edge: On" : "Edge: Off");
-    });
   }
+
+  m_refresh_widgets = [refreshes] {
+    for (const std::function<void()> &refresh : *refreshes) {
+      refresh();
+    }
+  };
 }

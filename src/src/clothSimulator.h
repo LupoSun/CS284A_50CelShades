@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "camera.h"
 #include "cloth.h"
@@ -45,6 +46,8 @@ private:
   void drawWireframe(GLShader &shader);
   void drawNormals(GLShader &shader);
   void drawPhong(GLShader &shader);
+  bool clothActive() const;
+  bool computeSceneBounds(Vector3D &min_bound, Vector3D &max_bound) const;
   int shaderIndexByName(const std::string &name) const;
   void renderShadowMap(const Matrix4f &lightViewProjection);
   void renderSceneToOffscreen(const UserShader &active_shader,
@@ -61,6 +64,8 @@ private:
   void setMeshCollisionEnabled(bool enabled);
   bool loadRuntimeMesh(const std::string &path, double friction,
                        const Vector3D &scale, const Vector3D &translate);
+  void refreshRuntimeMeshList();
+  bool deleteSelectedRuntimeMesh();
   
   void load_shaders();
   void load_textures();
@@ -107,6 +112,9 @@ private:
   nanogui::Vector3f m_gui_mesh_scale = nanogui::Vector3f(1.0f, 1.0f, 1.0f);
   nanogui::Vector3f m_gui_mesh_translate = nanogui::Vector3f(0.0f, 0.0f, 0.0f);
   float m_gui_mesh_friction = 0.0f;
+  int m_selected_runtime_mesh = -1;
+  ComboBox *m_runtime_mesh_combo = nullptr;
+  Label *m_runtime_mesh_status = nullptr;
   
   // File management
   
@@ -129,11 +137,17 @@ private:
   CGL::Vector3D gravity = CGL::Vector3D(0, -9.8, 0);
   nanogui::Color color = nanogui::Color(0.85f, 0.35f, 0.40f, 1.0f);
 
-  Cloth *cloth;
-  ClothParameters *cp;
-  vector<CollisionObject *> *collision_objects;
-  vector<CollisionObject *> m_runtime_meshes;
+  Cloth *cloth = nullptr;
+  ClothParameters *cp = nullptr;
+  vector<CollisionObject *> *collision_objects = nullptr;
+  struct RuntimeMeshEntry {
+    std::string display_name;
+    CollisionObject *object;
+  };
+  vector<RuntimeMeshEntry> m_runtime_meshes;
   bool m_owns_collision_objects = false;
+  bool m_has_cloth = false;
+  bool m_cloth_enabled = false;
 
   // OpenGL attributes
 

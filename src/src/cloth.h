@@ -30,15 +30,15 @@ struct ClothParameters {
 
   // Global simulation parameters
 
-  bool enable_structural_constraints;
-  bool enable_shearing_constraints;
-  bool enable_bending_constraints;
+  bool enable_structural_constraints = true;
+  bool enable_shearing_constraints = true;
+  bool enable_bending_constraints = true;
 
-  double damping;
+  double damping = 0.2;
 
   // Mass-spring parameters
-  double density;
-  double ks;
+  double density = 15.0;
+  double ks = 5000.0;
 };
 
 struct Cloth {
@@ -61,18 +61,18 @@ struct Cloth {
   long long hash_position(Vector3D pos);
 
   // Cloth properties
-  double width;
-  double height;
-  int num_width_points;
-  int num_height_points;
-  double thickness;
-  e_orientation orientation;
+  double width = 0.0;
+  double height = 0.0;
+  int num_width_points = 0;
+  int num_height_points = 0;
+  double thickness = 0.0;
+  e_orientation orientation = HORIZONTAL;
 
   // Cloth components
   vector<PointMass> point_masses;
   vector<vector<int>> pinned;
   vector<Spring> springs;
-  ClothMesh *clothMesh;
+  ClothMesh *clothMesh = nullptr;
 
   // Spatial hashing
   unordered_map<long long, vector<PointMass *> *> map;

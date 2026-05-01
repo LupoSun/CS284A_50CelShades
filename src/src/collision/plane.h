@@ -17,8 +17,9 @@ public:
       : point(point), normal(normal.unit()), friction(friction),
         length(length) {}
 
-  void render(GLShader &shader);
-  void collide(PointMass &pm);
+  void render(GLShader &shader) override;
+  void collide(PointMass &pm) override;
+  bool bounds(Vector3D &min_bound, Vector3D &max_bound) const override;
 
   Vector3D point;
   Vector3D normal;
