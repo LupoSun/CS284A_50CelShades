@@ -52,12 +52,12 @@ All visual controls are in the scrollable **Appearance** panel on the left.
 
 ### From a scene JSON
 
-Two ready-to-use meshes are in `src/scene/`: **`mesh_cube.obj`** and **`mesh_scene.obj`**. To switch between them, edit the `path` in `src/scene/example_mesh.json`:
+Two ready-to-use meshes are in `src/scene/`: **`sample_mesh.obj`** and **`test_mesh.obj`**. To switch between them, edit the `path` in `src/scene/example_mesh.json`:
 
 ```json
 {
   "meshes": [
-    { "path": "mesh_scene.obj", "scale": 1.0, "translate": [0,0,0], "friction": 0.0, "collide": false }
+    { "path": "test_mesh.obj", "scale": 1.0, "translate": [0,0,0], "friction": 0.0, "collide": false }
   ]
 }
 ```
