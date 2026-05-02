@@ -250,7 +250,7 @@ private:
   // Shadow mapping
   GLuint m_shadow_fbo = 0;
   GLuint m_shadow_depth_tex = 0;
-  int m_shadow_map_size = 2048;
+  int m_shadow_map_size = 4096;
 
   std::shared_ptr<GLShader> m_shadow_depth_shader;
 

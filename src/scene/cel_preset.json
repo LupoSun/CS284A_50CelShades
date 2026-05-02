@@ -19,8 +19,8 @@
   ],
   "light_dir": [
     0.5,
-    2.0,
-    2.0
+    -2.0,
+    -1.0
   ],
   "light_pos": [
     0.5,
@@ -28,10 +28,10 @@
     2.0
   ],
   "light_type": 0,
-  "dark_threshold": 0.42,
-  "bright_threshold": 0.95,
-  "shadow_strength": 0.9,
-  "highlight_strength": 0.18,
+  "dark_threshold": 0.9,
+  "bright_threshold": 0.2,
+  "shadow_strength": 0.2,
+  "highlight_strength": 0.3,
   "pattern_scale": 2.0,
   "pattern_radius": 0.18,
   "bands": 1.0,
