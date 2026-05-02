@@ -1,56 +1,57 @@
 {
-  "base_color": [
-    0.85,
-    0.35,
-    0.4,
+  "background_color": [
+    0.850000023841858,
+    0.850000023841858,
+    0.850000023841858,
     1.0
   ],
-  "dark_color": [
-    0.38,
-    0.16,
-    0.18,
+  "bands": 1.0,
+  "base_color": [
+    0.850000023841858,
+    0.349999994039536,
+    0.400000005960464,
     1.0
   ],
   "bright_color": [
-    1.0,
-    0.85,
-    0.78,
+    0.927801012992859,
+    0.624855995178223,
+    0.717935562133789,
     1.0
   ],
+  "bright_threshold": 0.200000002980232,
+  "dark_color": [
+    0.160000026226044,
+    0.295573174953461,
+    0.379999995231628,
+    1.0
+  ],
+  "dark_threshold": 0.899999976158142,
+  "depth_edge_thickness": 1.79999995231628,
+  "edge_color": [
+    0.344929575920105,
+    0.15574038028717,
+    0.15574038028717,
+    1.0
+  ],
+  "edge_depth_threshold": 0.00999999977648258,
+  "edge_enabled": true,
+  "edge_normal_threshold": 0.200000002980232,
+  "edge_strength": 1.0,
+  "highlight_strength": 0.300000011920929,
   "light_dir": [
     0.5,
     -2.0,
-    -1.0
+    -0.615430057048798
   ],
   "light_pos": [
-    0.5,
+    -1.72111213207245,
     2.0,
-    2.0
+    -1.13479697704315
   ],
   "light_type": 0,
-  "dark_threshold": 0.9,
-  "bright_threshold": 0.2,
-  "shadow_strength": 0.2,
-  "highlight_strength": 0.3,
+  "normal_edge_thickness": 1.0,
+  "pattern_radius": 0.180000007152557,
   "pattern_scale": 2.0,
-  "pattern_radius": 0.18,
-  "bands": 1.0,
-  "background_color": [
-    0.85,
-    0.85,
-    0.85,
-    1.0
-  ],
-  "edge_enabled": true,
-  "edge_color": [
-    0.0,
-    0.0,
-    0.0,
-    1.0
-  ],
-  "edge_depth_threshold": 0.01,
-  "edge_normal_threshold": 0.2,
-  "edge_strength": 1.0,
-  "depth_edge_thickness": 1.8,
-  "normal_edge_thickness": 1.0
+  "shadow_strength": 0.200000002980232,
+  "texture_path": "../../../textures/texture_1.png"
 }

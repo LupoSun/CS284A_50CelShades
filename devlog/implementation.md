@@ -23,11 +23,14 @@ in order:
    and position are updated each frame using `glfwGetTime()`, orbiting the
    light around the Y axis at `m_light_rotate_speed`.
 
-3. **Shadow map.** `getLightViewProjectionMatrix()` builds an orthographic
-   projection from `m_cel_light_dir`. Then `renderShadowMap()` uses that to
-   render all geometry into a depth-only framebuffer. This step is skipped
-   when point light mode is active, because the system only supports a single
-   directional shadow frustum.
+3. **Shadow map.** `getLightViewProjectionMatrix()` builds the light's
+   view-projection matrix — orthographic from `m_cel_light_dir` for
+   directional light, or perspective (90° FOV) from `m_cel_light_pos` toward
+   the scene center for point light. `renderShadowMap()` then renders all
+   geometry into the depth-only framebuffer using that matrix. Directional
+   mode enables front-face culling to reduce self-shadowing acne; point mode
+   disables culling since perspective projection makes face orientation
+   relative to the light unpredictable.
 
 4. **Scene rendering.** This differs depending on whether compare mode is on.
    - **Compare OFF:** `renderSceneToOffscreen` renders the active shader into
@@ -112,16 +115,16 @@ either a constant direction (`-u_cel_light_dir`, for directional light) or a
 per-fragment vector from the surface to `u_cel_light_pos` (for point light).
 NdotL is then a standard `dot(N, L)` clamped to zero.
 
-**Shadow lookup.** For directional light only, `computeShadow` projects the
-world-space position into the shadow map's clip space using
-`u_light_view_projection`. Fragments outside the shadow frustum return zero
-shadow immediately. A slope-scale bias is derived from `tan(acos(NdotL))`
-scaled by `u_shadow_bias` and clamped to `[0.0005, 0.01]` — this adjusts the
-bias based on how oblique the surface is to the light, reducing both
-self-shadowing acne and peter-panning. The comparison is done as a 4-tap PCF
-kernel at ±0.75 texel diagonal offsets, and the result is softened with
-`smoothstep(0.35, 0.65)` to give the shadow edge a slight gradient instead of
-a hard step.
+**Shadow lookup.** `computeShadow` runs for both light types. It projects the
+world-space position into light clip space; if `w ≤ 0` (behind the light
+camera, common with perspective projection) it returns zero immediately.
+Fragments outside the `[0,1]` NDC box also return zero. A slope-scale bias
+`u_shadow_bias × tan(acos(NdotL))` is applied — for directional light this
+is clamped to `[0.0005, 0.01]`; for point light the ceiling drops to `0.001`
+because perspective depth is hyperbolic and objects cluster near NDC 1.0,
+making a large bias erase contact shadows entirely. The comparison is a
+3×3 PCF kernel (9 taps at ±1.5 texel spacing), softened with
+`smoothstep(0.2, 0.8)` to reduce aliasing on the shadow boundary.
 
 **Toon ramp (posterization).** The NdotL value is first normalized against
 `u_cel_dark_threshold` to get a 0–1 ramp, then quantized into `u_cel_bands`
@@ -169,7 +172,7 @@ the edge detection pass reads from `m_scene_normal_tex`.
 | `u_cel_pattern_scale` | Pattern scale | XY tiling of cotton texture |
 | `u_cel_bands` | Bands | Posterization step count (1–16) |
 | `u_cel_light_dir` / `u_cel_light_pos` | Light dir / Light pos | Auto-normalized each frame |
-| `u_cel_light_type` | Light type | 0 = directional (with shadows), 1 = point |
+| `u_cel_light_type` | Light type | 0 = directional (orthographic shadow), 1 = point (perspective shadow) |
 
 ### Preset serialization
 
@@ -192,37 +195,36 @@ second pass (inside `Cel.frag`), each fragment projects itself into that same
 light space and compares its depth to what was stored, determining whether it
 is in shadow.
 
-`shadow_depth.vert` is kept intentionally minimal. Its only job is to
-transform each vertex position by `u_light_view_projection * u_model`. It
-does declare `in_normal`, `in_uv`, and `in_tangent` even though it ignores
-them — this matches the standard VAO attribute layout used by all other
-geometry draw calls, avoiding attribute binding mismatches when switching
-shaders.
+`shadow_depth.vert` is kept intentionally minimal — it only transforms each
+vertex by `u_light_view_projection * u_model`. It declares `in_normal`,
+`in_uv`, and `in_tangent` even though it ignores them, to match the standard
+VAO layout and avoid attribute binding mismatches.
 
 ### Shadow map setup
 
 At init time, a 4096×4096 depth texture is attached to `m_shadow_fbo`. The
-Cel shader reads raw depth values from this texture rather than using OpenGL's
-built-in shadow comparison mode, because doing the comparison manually allows
-finer control over the bias calculation.
+Cel shader reads raw depth values manually rather than using OpenGL's built-in
+shadow comparison, allowing finer control over bias.
 
-### The render pass
+### Projection per light type
 
-Before rendering, front-face culling is enabled (`glCullFace(GL_FRONT)`).
-This is the standard trick to reduce self-shadowing acne: since shadow
-artifacts appear on front-facing surfaces, culling them from the shadow map
-means only back faces contribute depth, and the resulting shadow is slightly
-inset from the surface. The pass renders both cloth (when active) and all
-collision objects. It is skipped entirely when the light is in point mode,
-because the current system only supports a single directional shadow frustum.
+`getLightViewProjectionMatrix()` branches on `m_cel_light_type`. For
+directional light it builds the original orthographic frustum centered on
+the scene. For point light it builds a perspective projection (90° FOV,
+near = 0.05, far = canonical\_view\_distance × 8) from `m_cel_light_pos`
+looking toward `camera.view_point()`. In both cases a standard lookAt is
+constructed, with the up vector flipped to X if the look direction is nearly
+vertical.
 
-### Slope-scale bias in the Cel shader
+### Culling and bias
 
-Inside `Cel.frag`, the shadow bias is not a constant — it scales with
-`tan(acos(NdotL))`, which grows as the surface becomes more oblique to the
-light. The bias is clamped to `[0.0005, 0.01]` to avoid both
-self-shadowing on shallow surfaces and visible peter-panning (detached shadows)
-on steep ones.
+Directional mode enables front-face culling to push shadow depth slightly
+inset from the surface. Point mode disables culling, since the perspective
+view makes face orientation relative to the light geometry-dependent. The
+bias passed as `u_shadow_bias` differs per type (0.0025 directional,
+0.0003 point): perspective depth is hyperbolic and most scene geometry
+clusters in a tiny NDC range near 1.0, so the same absolute bias that works
+for orthographic would erase contact shadows entirely under perspective.
 
 ---
 
@@ -449,8 +451,6 @@ Launch from `src/build`:
 
 - Add a BVH or spatial grid to scale mesh collision beyond small demo assets.
 - Add `map_Kd` texture support for textured OBJ files.
-- Support point-light shadow mapping — currently the shadow pass is skipped
-  entirely when point light mode is active.
 - Add per-mesh collision toggles if scenes start mixing collidable and
   decoration-only meshes.
 - Add a clear-all runtime mesh button if iterating on many loaded meshes

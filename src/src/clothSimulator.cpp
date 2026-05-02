@@ -832,7 +832,7 @@ bool ClothSimulator::deleteSelectedRuntimeMesh() {
 }
 
 void ClothSimulator::renderShadowMap(const Matrix4f &lightViewProjection) {
-  if (m_shadow_fbo == 0 || !m_shadow_depth_shader || m_cel_light_type != 0) {
+  if (m_shadow_fbo == 0 || !m_shadow_depth_shader) {
     return;
   }
 
@@ -843,8 +843,12 @@ void ClothSimulator::renderShadowMap(const Matrix4f &lightViewProjection) {
   glViewport(0, 0, m_shadow_map_size, m_shadow_map_size);
   glEnable(GL_DEPTH_TEST);
   glClear(GL_DEPTH_BUFFER_BIT);
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_FRONT);
+  if (m_cel_light_type == 0) {
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+  } else {
+    glDisable(GL_CULL_FACE);
+  }
 
   GLShader &shader = *m_shadow_depth_shader;
   shader.bind();
@@ -927,7 +931,8 @@ void ClothSimulator::renderSceneGeometry(
       shader.setUniform("u_use_mtl_style", 0.0f, false);
       shader.setUniform("u_light_view_projection", lightViewProjection, false);
       shader.setUniform("u_shadow_map", 6, false);
-      shader.setUniform("u_shadow_bias", 0.0025f, false);
+      float shadow_bias = (m_cel_light_type == 1) ? 0.0003f : 0.0025f;
+      shader.setUniform("u_shadow_bias", shadow_bias, false);
       shader.setUniform("u_shadow_strength", 0.65f, false);
     }
 
@@ -1579,16 +1584,21 @@ Matrix4f ClothSimulator::getViewMatrix() {
 }
 
 Matrix4f ClothSimulator::getLightViewProjectionMatrix() {
-    Vector3f lightDir = m_cel_light_dir.normalized();
-
     Vector3D target3 = camera.view_point();
     Vector3f target(target3.x, target3.y, target3.z);
 
-    float dist = canonical_view_distance * 2.0f;
-    Vector3f eye = target - lightDir * dist;
+    Vector3f eye;
+    if (m_cel_light_type == 1) {
+        eye = m_cel_light_pos;
+    } else {
+        Vector3f lightDir = m_cel_light_dir.normalized();
+        float dist = canonical_view_distance * 2.0f;
+        eye = target - lightDir * dist;
+    }
 
     Vector3f up(0.0f, 1.0f, 0.0f);
-    if (fabs(lightDir.dot(up)) > 0.95f) {
+    Vector3f toTarget = (target - eye).normalized();
+    if (fabs(toTarget.dot(up)) > 0.95f) {
         up = Vector3f(1.0f, 0.0f, 0.0f);
     }
 
@@ -1603,17 +1613,28 @@ Matrix4f ClothSimulator::getLightViewProjectionMatrix() {
     view(1, 0) = y.x(); view(1, 1) = y.y(); view(1, 2) = y.z(); view(1, 3) = -y.dot(eye);
     view(2, 0) = z.x(); view(2, 1) = z.y(); view(2, 2) = z.z(); view(2, 3) = -z.dot(eye);
 
-    float r = canonical_view_distance * 1.5f;
-    float n = 0.1f;
-    float f = canonical_view_distance * 6.0f;
-
     Matrix4f proj;
     proj.setZero();
-    proj(0, 0) = 1.0f / r;
-    proj(1, 1) = 1.0f / r;
-    proj(2, 2) = -2.0f / (f - n);
-    proj(2, 3) = -(f + n) / (f - n);
-    proj(3, 3) = 1.0f;
+
+    if (m_cel_light_type == 1) {
+        float n = 0.05f;
+        float f = canonical_view_distance * 8.0f;
+        float tanHalf = std::tan(45.0f * 3.14159265f / 180.0f);
+        proj(0, 0) = 1.0f / tanHalf;
+        proj(1, 1) = 1.0f / tanHalf;
+        proj(2, 2) = -(f + n) / (f - n);
+        proj(2, 3) = -2.0f * f * n / (f - n);
+        proj(3, 2) = -1.0f;
+    } else {
+        float r = canonical_view_distance * 1.5f;
+        float n = 0.1f;
+        float f = canonical_view_distance * 6.0f;
+        proj(0, 0) = 1.0f / r;
+        proj(1, 1) = 1.0f / r;
+        proj(2, 2) = -2.0f / (f - n);
+        proj(2, 3) = -(f + n) / (f - n);
+        proj(3, 3) = 1.0f;
+    }
 
     return proj * view;
 }

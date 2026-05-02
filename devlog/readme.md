@@ -21,7 +21,7 @@ All visual controls are in the scrollable **Appearance** panel on the left.
 ## Cel Shader
 
 
-**Light** — **Light type** switches between Directional (supports shadow maps, a parallel light) and Point (positional, no shadow for now). **Rotate light** orbits the light around Y each frame.
+**Light** — **Light type** switches between Directional (parallel light, orthographic shadow map) and Point (positional, perspective shadow map). **Rotate light** orbits the light around Y each frame.
 
 **Shading parameters:**
 - **Dark thresh** — NdotL value where the lit region begins. Higher = more shadow.

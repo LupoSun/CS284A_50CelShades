@@ -57,6 +57,7 @@ vec4 samplePatternUnified(vec3 objPos, float scale) {
 
 float computeShadow(vec3 N, vec3 L) {
   vec4 lightClip = u_light_view_projection * v_position;
+  if (lightClip.w <= 0.0) return 0.0;
   vec3 projCoords = lightClip.xyz / lightClip.w;
   projCoords = projCoords * 0.5 + 0.5;
 
@@ -69,21 +70,26 @@ float computeShadow(vec3 N, vec3 L) {
   float ndotlRaw = max(dot(N, L), 0.0);
 
   float slopeBias = u_shadow_bias * tan(acos(clamp(ndotlRaw, 0.0, 1.0)));
-  slopeBias = clamp(slopeBias, 0.0005, 0.01);
+  if (u_cel_light_type > 0.5) {
+    slopeBias = clamp(slopeBias, 0.0, 0.001);
+  } else {
+    slopeBias = clamp(slopeBias, 0.0005, 0.01);
+  }
 
   float currentDepth = projCoords.z - slopeBias;
 
   vec2 texelSize = 1.0 / vec2(textureSize(u_shadow_map, 0));
-  vec2 offset = texelSize * 0.75;
 
-  float s0 = currentDepth > texture(u_shadow_map, projCoords.xy + vec2(-offset.x, -offset.y)).r ? 1.0 : 0.0;
-  float s1 = currentDepth > texture(u_shadow_map, projCoords.xy + vec2( offset.x, -offset.y)).r ? 1.0 : 0.0;
-  float s2 = currentDepth > texture(u_shadow_map, projCoords.xy + vec2(-offset.x,  offset.y)).r ? 1.0 : 0.0;
-  float s3 = currentDepth > texture(u_shadow_map, projCoords.xy + vec2( offset.x,  offset.y)).r ? 1.0 : 0.0;
+  float shadow = 0.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      float pcfDepth = texture(u_shadow_map, projCoords.xy + vec2(x, y) * texelSize * 1.5).r;
+      shadow += currentDepth > pcfDepth ? 1.0 : 0.0;
+    }
+  }
+  shadow /= 9.0;
 
-  float shadow = (s0 + s1 + s2 + s3) * 0.25;
-
-  shadow = smoothstep(0.35, 0.65, shadow);
+  shadow = smoothstep(0.2, 0.8, shadow);
 
   return shadow;
 }
@@ -108,10 +114,7 @@ void main() {
 
   float ndotl = max(dot(N, L), 0.0);
 
-  float shadow = 0.0;
-  if (u_cel_light_type < 0.5) {
-    shadow = computeShadow(N, L);
-  }
+  float shadow = computeShadow(N, L);
 
   float bands = max(1.0, u_cel_bands);
   float ramp = clamp(ndotl / max(u_cel_dark_threshold, 1e-3), 0.0, 1.0);

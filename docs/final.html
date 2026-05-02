@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fifty Shades of Cel – Final Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:   #003262;
+      --gold:   #FDB515;
+      --light:  #f5f7fa;
+      --white:  #ffffff;
+      --text:   #1a1a2e;
+      --muted:  #5a5a72;
+      --border: #dde1e9;
+      --radius: 8px;
+      --max-w:  900px;
+    }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--light);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--blue) 0%, #004a8f 100%);
+      color: var(--white);
+      text-align: center;
+      padding: 3.5rem 1.5rem 2.5rem;
+    }
+
+    header .course-tag {
+      display: inline-block;
+      background: var(--gold);
+      color: var(--blue);
+      font-weight: 700;
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.85rem;
+      border-radius: 999px;
+      margin-bottom: 1.2rem;
+    }
+
+    header h1 {
+      font-size: clamp(2.2rem, 6vw, 3.4rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    header .subtitle {
+      font-size: 1.1rem;
+      opacity: 0.85;
+      margin-bottom: 1.6rem;
+    }
+
+    .team-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem 1.2rem;
+      margin-top: 0.5rem;
+    }
+
+    .team-grid .member { font-size: 0.95rem; opacity: 0.9; }
+
+    nav {
+      background: var(--white);
+      border-bottom: 2px solid var(--gold);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    nav ul {
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0;
+      max-width: var(--max-w);
+      margin: 0 auto;
+    }
+
+    nav ul li a {
+      display: block;
+      padding: 0.85rem 1.2rem;
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    nav ul li a:hover { background: var(--blue); color: var(--white); }
+
+    main {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    section { margin-bottom: 3rem; }
+    section:last-child { margin-bottom: 0; }
+
+    h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--blue);
+      padding-bottom: 0.4rem;
+      border-bottom: 3px solid var(--gold);
+      margin-bottom: 1.2rem;
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--blue);
+      margin: 1.4rem 0 0.5rem;
+    }
+
+    p { margin-bottom: 0.9rem; }
+    p:last-child { margin-bottom: 0; }
+
+    ul, ol { padding-left: 1.5rem; margin-bottom: 0.9rem; }
+    li { margin-bottom: 0.3rem; }
+
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.4rem 1.6rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    figure { text-align: center; margin: 1.5rem 0; }
+
+    figure img {
+      max-width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    figcaption {
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin-top: 0.6rem;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .img-row { display: grid; gap: 0.75rem; margin: 1.2rem 0; }
+    .img-row-2 { grid-template-columns: 1fr 1fr; }
+    .img-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+    .img-row img {
+      width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      object-fit: cover;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 0.8rem; }
+    th { background: var(--blue); color: var(--white); padding: 0.6rem 1rem; text-align: left; }
+    td { padding: 0.55rem 1rem; border-bottom: 1px solid var(--border); }
+    tr:nth-child(even) td { background: #f0f3f8; }
+
+    .ref-list { list-style: none; padding: 0; }
+    .ref-list li { padding: 0.6rem 0; border-bottom: 1px solid var(--border); font-size: 0.92rem; }
+    .ref-list li:last-child { border-bottom: none; }
+    .ref-list a { color: var(--blue); }
+    .ref-list a:hover { color: #004a8f; }
+
+    .links-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.2rem;
+    }
+
+    .links-bar a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--blue);
+      color: var(--white);
+      padding: 0.5rem 1.1rem;
+      border-radius: var(--radius);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+
+    .links-bar a:hover { background: #004a8f; }
+    .links-bar a.gold { background: var(--gold); color: var(--blue); }
+    .links-bar a.gold:hover { background: #e6a300; }
+
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      background: var(--white);
+    }
+
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 600px) {
+      .img-row-2, .img-row-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="course-tag">CS284A · Spring 2026 · UC Berkeley</span>
+  <h1>Fifty Shades of Cel</h1>
+  <p class="subtitle">Final Report</p>
+  <div class="team-grid">
+    <span class="member">Kevin Frans</span>
+    <span class="member">·</span>
+    <span class="member">Qijun Li</span>
+    <span class="member">·</span>
+    <span class="member">Shaoyi Wang</span>
+    <span class="member">·</span>
+    <span class="member">Tao Sun</span>
+  </div>
+  <div class="links-bar" style="justify-content:center; margin-top:1.4rem;">
+    <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">GitHub</a>
+    <a href="index.html">Proposal</a>
+    <a href="milestone.html">Milestone</a>
+    <!-- TODO: add final video / slides links -->
+    <!-- <a href="https://youtu.be/..." target="_blank" rel="noopener">Video</a> -->
+    <!-- <a href="https://docs.google.com/..." target="_blank" rel="noopener">Slides</a> -->
+  </div>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#abstract">Abstract</a></li>
+    <li><a href="#approach">Technical Approach</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#contributions">Contributions</a></li>
+    <li><a href="#references">References</a></li>
+  </ul>
+</nav>
+
+<main>
+
+  <!-- Abstract -->
+  <section id="abstract">
+    <h2>Abstract</h2>
+    <div class="card">
+      <p>
+        TODO
+      </p>
+    </div>
+  </section>
+
+  <!-- Technical Approach -->
+  <section id="approach">
+
+  </section>
+
+  <!-- Results -->
+  <section id="results">
+    <h2>Results</h2>
+
+    <p>TODO</p>
+
+
+    <!-- Final video -->
+    <h3>Video</h3>
+    <p>TODO:</p>
+    <!--
+    <div style="position:relative; width:100%; aspect-ratio:16/9;">
+      <iframe src="https://www.youtube.com/embed/VIDEO_ID"
+        title="Fifty Shades of Cel – Final Video" frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen
+        style="position:absolute; top:0; left:0; width:100%; height:100%; border-radius:var(--radius);">
+      </iframe>
+    </div>
+    -->
+  </section>
+
+  <!-- Contributions -->
+  <section id="contributions">
+    <h2>Contributions</h2>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Team Member</th><th>Contributions</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Kevin Frans</td><td>TODO</td></tr>
+          <tr><td>Qijun Li</td><td>TODO</td></tr>
+          <tr><td>Shaoyi Wang</td><td>TODO</td></tr>
+          <tr><td>Tao Sun</td><td>TODO</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- References -->
+  <section id="references">
+    <h2>References</h2>
+    <ul class="ref-list">
+      <li>
+        Wikipedia contributors.
+        <a href="https://en.wikipedia.org/wiki/Cel_shading" target="_blank" rel="noopener">
+          <em>Cel shading</em></a>. Wikipedia.
+      </li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  <p>
+    CS284A Final Project · Spring 2026 ·
+    <a href="https://cs184.eecs.berkeley.edu" target="_blank" rel="noopener">UC Berkeley</a>
+    &nbsp;|&nbsp;
+    <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">GitHub</a>
+    &nbsp;|&nbsp;
+    <a href="index.html">Proposal</a>
+    &nbsp;|&nbsp;
+    <a href="milestone.html">Milestone</a>
+  </p>
+</footer>
+
+</body>
+</html>
