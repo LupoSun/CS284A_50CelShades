@@ -447,11 +447,3 @@ Launch from `src/build`:
 
 ---
 
-## Reminders
-
-- Add a BVH or spatial grid to scale mesh collision beyond small demo assets.
-- Add `map_Kd` texture support for textured OBJ files.
-- Add per-mesh collision toggles if scenes start mixing collidable and
-  decoration-only meshes.
-- Add a clear-all runtime mesh button if iterating on many loaded meshes
-  becomes common.
