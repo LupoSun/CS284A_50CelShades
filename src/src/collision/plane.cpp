@@ -1,10 +1,7 @@
-#include "iostream"
 #include <algorithm>
 #include <cmath>
 #include <nanogui/nanogui.h>
 
-#include "../clothMesh.h"
-#include "../clothSimulator.h"
 #include "plane.h"
 
 using namespace std;
@@ -34,9 +31,10 @@ void Plane::collide(PointMass &pm) {
 
         double proj_u = dot(offset, u);
         double proj_v = dot(offset, v);
-        double half = length / 2.0;
+        double half_width = width / 2.0;
+        double half_height = height / 2.0;
 
-        if (fabs(proj_u) > half || fabs(proj_v) > half)
+        if (fabs(proj_u) > half_width || fabs(proj_v) > half_height)
             return;
 
         // Push back to the side the point came from
@@ -54,12 +52,13 @@ void Plane::collide(PointMass &pm) {
 bool Plane::bounds(Vector3D &min_bound, Vector3D &max_bound) const {
   Vector3D u, v;
   computeTangents(normal, u, v);
-  double half = length / 2.0;
+  double half_width = width / 2.0;
+  double half_height = height / 2.0;
   Vector3D corners[4] = {
-      point + (u + v) * half,
-      point + (u - v) * half,
-      point + (-u + v) * half,
-      point + (-u - v) * half
+      point + u * half_width + v * half_height,
+      point + u * half_width - v * half_height,
+      point - u * half_width + v * half_height,
+      point - u * half_width - v * half_height
   };
 
   min_bound = corners[0];
@@ -84,16 +83,17 @@ void Plane::render(GLShader &shader) {
   Vector3f sCross = sNormal.cross(sParallel).normalized();
   sParallel = sCross.cross(sNormal).normalized();
 
-  float half = (float)(length / 2.0);
+  float half_width = (float)(width / 2.0);
+  float half_height = (float)(height / 2.0);
 
   MatrixXf positions(3, 4);
   MatrixXf normals(3, 4);
   MatrixXf tangents(4, 4);
 
-  positions.col(0) << sPoint + half * (sCross + sParallel);
-  positions.col(1) << sPoint + half * (sCross - sParallel);
-  positions.col(2) << sPoint + half * (-sCross + sParallel);
-  positions.col(3) << sPoint + half * (-sCross - sParallel);
+  positions.col(0) << sPoint + half_width * sCross + half_height * sParallel;
+  positions.col(1) << sPoint + half_width * sCross - half_height * sParallel;
+  positions.col(2) << sPoint - half_width * sCross + half_height * sParallel;
+  positions.col(3) << sPoint - half_width * sCross - half_height * sParallel;
 
   normals.col(0) << sNormal;
   normals.col(1) << sNormal;
@@ -104,11 +104,10 @@ void Plane::render(GLShader &shader) {
     tangents.col(i) << sParallel.x(), sParallel.y(), sParallel.z(), 0.0f;
   }
 
-  float uvScale = (float)length;
   MatrixXf uvs(2, 4);
-  uvs.col(0) << uvScale, uvScale;
-  uvs.col(1) << uvScale, 0.0f;
-  uvs.col(2) << 0.0f, uvScale;
+  uvs.col(0) << (float)width, (float)height;
+  uvs.col(1) << (float)width, 0.0f;
+  uvs.col(2) << 0.0f, (float)height;
   uvs.col(3) << 0.0f, 0.0f;
 
   shader.uploadAttrib("in_position", positions);

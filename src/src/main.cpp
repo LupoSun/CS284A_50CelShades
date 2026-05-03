@@ -34,6 +34,8 @@ const string KEY_SPHERE = "sphere";
 const string KEY_SPHERES = "spheres";
 const string KEY_PLANE = "plane";
 const string KEY_PLANES = "planes";
+const string KEY_BOX = "box";
+const string KEY_BOXES = "boxes";
 const string KEY_CLOTH = "cloth";
 const string KEY_MESH = "mesh";
 const string KEY_MESHES = "meshes";
@@ -43,6 +45,8 @@ const unordered_set<string> VALID_KEYS = {
     KEY_SPHERES,
     KEY_PLANE,
     KEY_PLANES,
+    KEY_BOX,
+    KEY_BOXES,
     KEY_CLOTH,
     KEY_MESH,
     KEY_MESHES
@@ -51,6 +55,8 @@ const unordered_set<string> VALID_KEYS = {
 ClothSimulator *app = nullptr;
 GLFWwindow *window = nullptr;
 Screen *screen = nullptr;
+
+void incompleteObjectError(const char *object, const char *attribute);
 
 void error_callback(int error, const char* description) {
   puts(description);
@@ -129,6 +135,17 @@ Vector3D jsonVec3OrDefault(const json& object,
   }
 
   return default_value;
+}
+
+Vector3D jsonRequiredVec3(const json& object,
+                          const std::string& key,
+                          const char *object_name) {
+  auto it = object.find(key);
+  if (it != object.end() && it->is_array() && it->size() >= 3) {
+    return Vector3D((double)(*it)[0], (double)(*it)[1], (double)(*it)[2]);
+  }
+  incompleteObjectError(object_name, key.c_str());
+  return Vector3D();
 }
 
 } // namespace
@@ -273,6 +290,7 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp,
       string path;
       double friction = 0.0;
       bool collide = false;
+      bool move_along_x = false;
 
       auto it_path = mesh_obj.find("path");
       if (it_path != mesh_obj.end()) {
@@ -292,12 +310,89 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp,
           collide = *it_collide;
       }
 
+      auto it_move_along_x = mesh_obj.find("move_along_x");
+      if (it_move_along_x != mesh_obj.end()) {
+          move_along_x = *it_move_along_x;
+      }
+
       Vector3D scale = jsonVec3OrDefault(mesh_obj, "scale", Vector3D(1.0, 1.0, 1.0));
       Vector3D translate = jsonVec3OrDefault(mesh_obj, "translate", Vector3D(0.0, 0.0, 0.0));
       string resolved_path = resolveMeshPath(path, scene_dir, project_root);
 
-      Mesh* m = new Mesh(resolved_path, friction, scale, translate, collide);
+      Mesh* m = new Mesh(resolved_path, friction, scale, translate, collide,
+                         move_along_x);
       objects->push_back(m);
+  };
+
+  auto addPlane = [&](const json& plane_obj) {
+      Vector3D point = jsonRequiredVec3(plane_obj, "point", "plane");
+      Vector3D normal = jsonRequiredVec3(plane_obj, "normal", "plane");
+      double friction;
+
+      auto it_friction = plane_obj.find("friction");
+      if (it_friction != plane_obj.end()) {
+        friction = *it_friction;
+      } else {
+        incompleteObjectError("plane", "friction");
+      }
+
+      auto it_width = plane_obj.find("width");
+      auto it_height = plane_obj.find("height");
+      if (it_width != plane_obj.end() || it_height != plane_obj.end()) {
+        if (it_width == plane_obj.end()) {
+          incompleteObjectError("plane", "width");
+        }
+        if (it_height == plane_obj.end()) {
+          incompleteObjectError("plane", "height");
+        }
+        Plane *p = new Plane(point, normal, friction, (double)*it_width,
+                             (double)*it_height);
+        objects->push_back(p);
+        return;
+      }
+
+      double planeLength = 4.0;
+      auto it_length = plane_obj.find("length");
+      if (it_length != plane_obj.end()) {
+        planeLength = *it_length;
+      }
+
+      Plane *p = new Plane(point, normal, friction, planeLength);
+      objects->push_back(p);
+  };
+
+  auto addBox = [&](const json& box_obj) {
+      Vector3D center = jsonRequiredVec3(box_obj, "center", "box");
+      Vector3D widths = jsonRequiredVec3(box_obj, "widths", "box");
+      double friction;
+
+      auto it_friction = box_obj.find("friction");
+      if (it_friction != box_obj.end()) {
+        friction = *it_friction;
+      } else {
+        incompleteObjectError("box", "friction");
+      }
+
+      Vector3D half(widths.x / 2.0, widths.y / 2.0, widths.z / 2.0);
+
+      objects->push_back(new Plane(center + Vector3D(half.x, 0, 0),
+                                   Vector3D(1, 0, 0), friction,
+                                   widths.z, widths.y));
+      objects->push_back(new Plane(center - Vector3D(half.x, 0, 0),
+                                   Vector3D(-1, 0, 0), friction,
+                                   widths.z, widths.y));
+      objects->push_back(new Plane(center + Vector3D(0, half.y, 0),
+                                   Vector3D(0, 1, 0), friction,
+                                   widths.x, widths.z));
+      objects->push_back(new Plane(center - Vector3D(0, half.y, 0),
+                                   Vector3D(0, -1, 0), friction,
+                                   widths.x, widths.z));
+      objects->push_back(new Plane(center + Vector3D(0, 0, half.z),
+                                   Vector3D(0, 0, 1), friction,
+                                   widths.x, widths.y));
+      objects->push_back(new Plane(center - Vector3D(0, 0, half.z),
+                                   Vector3D(0, 0, -1), friction,
+                                   widths.x, widths.y));
   };
 
   // Loop over objects in scene
@@ -498,83 +593,22 @@ bool loadObjectsFromFile(string filename, Cloth *cloth, ClothParameters *cp,
       }
     } else if (key == KEY_PLANES) {
       for (auto &plane_obj : object) {
-        Vector3D point, normal;
-        double friction;
-
-        auto it_point = plane_obj.find("point");
-        if (it_point != plane_obj.end()) {
-          vector<double> vec_point = *it_point;
-          point = Vector3D(vec_point[0], vec_point[1], vec_point[2]);
-        } else {
-          incompleteObjectError("plane", "point");
-        }
-
-        auto it_normal = plane_obj.find("normal");
-        if (it_normal != plane_obj.end()) {
-          vector<double> vec_normal = *it_normal;
-          normal = Vector3D(vec_normal[0], vec_normal[1], vec_normal[2]);
-        } else {
-          incompleteObjectError("plane", "normal");
-        }
-
-        auto it_friction = plane_obj.find("friction");
-        if (it_friction != plane_obj.end()) {
-          friction = *it_friction;
-        } else {
-          incompleteObjectError("plane", "friction");
-        }
-
-        double planeLength = 4.0;
-        auto it_length = plane_obj.find("length");
-        if (it_length != plane_obj.end()) {
-          planeLength = *it_length;
-        }
-
-        Plane *p = new Plane(point, normal, friction, planeLength);
-        objects->push_back(p);
+        addPlane(plane_obj);
       }
-    }else if (key == KEY_PLANE) {
-      Vector3D point, normal;
-      double friction;
-
-      auto it_point = object.find("point");
-      if (it_point != object.end()) {
-        vector<double> vec_point = *it_point;
-        point = Vector3D(vec_point[0], vec_point[1], vec_point[2]);
-      } else {
-        incompleteObjectError("plane", "point");
+    } else if (key == KEY_PLANE) {
+      addPlane(object);
+    } else if (key == KEY_BOXES) {
+      for (auto &box_obj : object) {
+        addBox(box_obj);
       }
-
-      auto it_normal = object.find("normal");
-      if (it_normal != object.end()) {
-        vector<double> vec_normal = *it_normal;
-        normal = Vector3D(vec_normal[0], vec_normal[1], vec_normal[2]);
-      } else {
-        incompleteObjectError("plane", "normal");
+    } else if (key == KEY_BOX) {
+      addBox(object);
+    } else if (key == KEY_MESH) {
+      addMesh(object);
+    } else if (key == KEY_MESHES) {
+      for (auto& mesh_obj : object) {
+        addMesh(mesh_obj);
       }
-
-      auto it_friction = object.find("friction");
-      if (it_friction != object.end()) {
-        friction = *it_friction;
-      } else {
-        incompleteObjectError("plane", "friction");
-      }
-
-      double planeLength = 4.0;
-      auto it_length = object.find("length");
-      if (it_length != object.end()) {
-        planeLength = *it_length;
-      }
-
-      Plane *p = new Plane(point, normal, friction, planeLength);
-      objects->push_back(p);
-    }else if (key == KEY_MESH) {
-     addMesh(object);
-    }
- else if (key == KEY_MESHES) {
-     for (auto& mesh_obj : object) {
-         addMesh(mesh_obj);
-     }
     }
   }
 

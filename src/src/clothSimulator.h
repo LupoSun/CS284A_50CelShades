@@ -233,6 +233,7 @@ private:
   // Simulation flags
 
   bool is_paused = true;
+  double m_last_frame_time = -1.0;
 
   // Screen attributes
 

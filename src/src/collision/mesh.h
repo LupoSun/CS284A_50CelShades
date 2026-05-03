@@ -17,10 +17,12 @@ public:
     Mesh(const string& path, double friction = 0.0,
          const Vector3D& scale = Vector3D(1.0, 1.0, 1.0),
          const Vector3D& translate = Vector3D(0.0, 0.0, 0.0),
-         bool collision_enabled = false);
+         bool collision_enabled = false,
+         bool move_along_x = false);
 
     void collide(PointMass& pm) override;
     void render(GLShader& shader) override;
+    void update(double dt) override;
     bool loaded() const { return vertex_count > 0; }
 
     bool m_has_mtl = false;
@@ -69,6 +71,7 @@ private:
     Vector3D scale;
     Vector3D translate;
     bool m_collision_enabled;
+    bool m_move_along_x;
     bool m_has_bounds = false;
     Vector3D m_bounds_min;
     Vector3D m_bounds_max;
@@ -99,6 +102,7 @@ private:
 
     bool loadMTL(const string& mtl_path);
     string getDirectory(const string& filepath);
+    void applyTranslationDelta(const Vector3D& delta);
 };
 
 #endif

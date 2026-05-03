@@ -1,0 +1,33 @@
+{
+  "boxes": [
+    {
+      "center": [0.0, -5.2, 0.0],
+      "widths": [10.0, 10.0, 10.0],
+      "friction": 0.3
+    }
+  ],
+  "meshes": [
+    {
+      "path": "test_mesh.obj",
+      "friction": 0.2,
+      "scale": [1, 1, 1],
+      "translate": [0.15, 0.0, 0.35],
+      "collide": false,
+      "move_along_x": true
+    },
+    {
+      "path": "tree.obj",
+      "friction": 0.2,
+      "scale": [1.2, 1.2, 1.2],
+      "translate": [-1.5, 0.8, -1.0],
+      "collide": false
+    },
+    {
+      "path": "tree.obj",
+      "friction": 0.2,
+      "scale": [1.2, 1.2, 1.2],
+      "translate": [1.8, 0.8, 1.1],
+      "collide": false
+    }
+  ]
+}

@@ -15,6 +15,7 @@ public:
 
   virtual void render(GLShader &shader) = 0;
   virtual void collide(PointMass &pm) = 0;
+  virtual void update(double dt) { (void)dt; }
 
   virtual bool isMesh() const { return false; }
   virtual bool hasMtl() const { return false; }

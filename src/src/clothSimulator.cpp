@@ -1135,6 +1135,17 @@ void ClothSimulator::renderCompareComposite() {
 void ClothSimulator::drawContents() {
   glEnable(GL_DEPTH_TEST);
 
+  double current_time = glfwGetTime();
+  double delta_time =
+      (m_last_frame_time < 0.0) ? 0.0 : current_time - m_last_frame_time;
+  m_last_frame_time = current_time;
+
+  if (!is_paused && delta_time > 0.0 && collision_objects) {
+    for (CollisionObject *co : *collision_objects) {
+      co->update(delta_time);
+    }
+  }
+
   if (!is_paused && clothActive()) {
     vector<Vector3D> external_accelerations = {gravity};
 

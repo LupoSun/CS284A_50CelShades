@@ -19,6 +19,7 @@ namespace {
 
 constexpr double kSurfaceOffset = 0.0001;
 constexpr double kEpsilon = 1e-8;
+constexpr double kMoveAlongXSpeed = 0.15;
 
 string trim(const string& s) {
     size_t begin = s.find_first_not_of(" \t\r\n");
@@ -57,9 +58,11 @@ Vector3D transformNormal(const Vector3D& n, const Vector3D& scale) {
 } // namespace
 
 Mesh::Mesh(const string& path, double friction, const Vector3D& scale,
-           const Vector3D& translate, bool collision_enabled)
+           const Vector3D& translate, bool collision_enabled,
+           bool move_along_x)
     : path(path), friction(friction), scale(scale), translate(translate),
-      m_collision_enabled(collision_enabled), vertex_count(0) {
+      m_collision_enabled(collision_enabled), m_move_along_x(move_along_x),
+      vertex_count(0) {
 
     bool success = loadOBJ(path);
 
@@ -170,6 +173,14 @@ void Mesh::render(GLShader& shader) {
     shader.drawArray(GL_TRIANGLES, 0, vertex_count);
 }
 
+void Mesh::update(double dt) {
+    if (!m_move_along_x || dt <= 0.0) {
+        return;
+    }
+
+    applyTranslationDelta(Vector3D(kMoveAlongXSpeed * dt, 0.0, 0.0));
+}
+
 bool Mesh::bounds(Vector3D& min_bound, Vector3D& max_bound) const {
     if (!m_has_bounds) {
         return false;
@@ -177,6 +188,37 @@ bool Mesh::bounds(Vector3D& min_bound, Vector3D& max_bound) const {
     min_bound = m_bounds_min;
     max_bound = m_bounds_max;
     return true;
+}
+
+void Mesh::applyTranslationDelta(const Vector3D& delta) {
+    if (delta.norm() < kEpsilon) {
+        return;
+    }
+
+    translate += delta;
+
+    for (Vector3D& p : obj_positions) {
+        p += delta;
+    }
+
+    for (CachedTriangle& tri : collision_triangles) {
+        tri.p0 += delta;
+        tri.p1 += delta;
+        tri.p2 += delta;
+        tri.bbox_min += delta;
+        tri.bbox_max += delta;
+    }
+
+    if (m_has_bounds) {
+        m_bounds_min += delta;
+        m_bounds_max += delta;
+    }
+
+    for (int col = 0; col < vertex_count; col++) {
+        positions(0, col) += (float)delta.x;
+        positions(1, col) += (float)delta.y;
+        positions(2, col) += (float)delta.z;
+    }
 }
 
 string Mesh::getDirectory(const string& filepath) {
