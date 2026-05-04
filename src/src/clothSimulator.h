@@ -62,6 +62,7 @@ private:
   void renderBaselineToFramebuffer(double projection_aspect = -1.0);
   void renderCompareComposite();
   void setMeshCollisionEnabled(bool enabled);
+  void setControlPanelsVisible(bool visible);
   bool loadRuntimeMesh(const std::string &path, double friction,
                        const Vector3D &scale, const Vector3D &translate);
   void refreshRuntimeMeshList();
@@ -109,10 +110,15 @@ private:
   bool m_compare_animate = false;
   float m_compare_anim_speed = 0.75f;
   bool m_mesh_collision_enabled = false;
+  bool m_control_panels_visible = true;
+  bool m_turntable_enabled = false;
+  float m_turntable_speed = 0.35f;
   nanogui::Vector3f m_gui_mesh_scale = nanogui::Vector3f(1.0f, 1.0f, 1.0f);
   nanogui::Vector3f m_gui_mesh_translate = nanogui::Vector3f(0.0f, 0.0f, 0.0f);
   float m_gui_mesh_friction = 0.0f;
   int m_selected_runtime_mesh = -1;
+  Window *m_simulation_window = nullptr;
+  Window *m_appearance_window = nullptr;
   ComboBox *m_runtime_mesh_combo = nullptr;
   Label *m_runtime_mesh_status = nullptr;
   

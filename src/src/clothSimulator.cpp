@@ -748,6 +748,19 @@ void ClothSimulator::setMeshCollisionEnabled(bool enabled) {
   }
 }
 
+void ClothSimulator::setControlPanelsVisible(bool visible) {
+  m_control_panels_visible = visible;
+  if (m_simulation_window) {
+    m_simulation_window->setVisible(visible);
+  }
+  if (m_appearance_window) {
+    m_appearance_window->setVisible(visible);
+  }
+  if (screen) {
+    screen->performLayout();
+  }
+}
+
 bool ClothSimulator::loadRuntimeMesh(const std::string &path, double friction,
                                      const Vector3D &scale,
                                      const Vector3D &translate) {
@@ -1171,6 +1184,10 @@ void ClothSimulator::drawContents() {
     if (r_pos < 1e-4f) r_pos = 1.0f;
     m_cel_light_pos.x() = r_pos * cos_t;
     m_cel_light_pos.z() = r_pos * sin_t;
+  }
+
+  if (m_turntable_enabled && delta_time > 0.0) {
+    camera.rotate_by(0.0, delta_time * m_turntable_speed);
   }
 
   Matrix4f lightViewProjection = getLightViewProjectionMatrix();
@@ -1803,6 +1820,12 @@ bool ClothSimulator::keyCallbackEvent(int key, int scancode, int action,
     case 'P':
       is_paused = !is_paused;
       break;
+    case GLFW_KEY_H:
+      setControlPanelsVisible(!m_control_panels_visible);
+      break;
+    case GLFW_KEY_T:
+      m_turntable_enabled = !m_turntable_enabled;
+      break;
     case 'n':
     case 'N':
       if (is_paused) {
@@ -1862,6 +1885,7 @@ void ClothSimulator::initGUI(Screen *screen) {
   Window *window;
   
   window = new Window(screen, "Simulation");
+  m_simulation_window = window;
   window->setPosition(Vector2i(default_window_size(0) - 245, 15));
   window->setLayout(new GroupLayout(15, 6, 14, 5));
 
@@ -2053,6 +2077,7 @@ void ClothSimulator::initGUI(Screen *screen) {
   }
   
   window = new Window(screen, "Appearance");
+  m_appearance_window = window;
   window->setPosition(Vector2i(15, 15));
   window->setFixedSize(Vector2i(260, std::max(360, default_window_size(1) - 30)));
   window->setLayout(new GroupLayout(10, 6, 10, 5));
