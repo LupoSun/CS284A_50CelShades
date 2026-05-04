@@ -130,6 +130,14 @@
     ul, ol { padding-left: 1.5rem; margin-bottom: 0.9rem; }
     li { margin-bottom: 0.3rem; }
 
+    code {
+      background: #eef2f7;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.05rem 0.25rem;
+      font-size: 0.9em;
+    }
+
     .card {
       background: var(--white);
       border: 1px solid var(--border);
@@ -151,7 +159,7 @@
       font-size: 0.88rem;
       color: var(--muted);
       margin-top: 0.6rem;
-      max-width: 700px;
+      max-width: 760px;
       margin-left: auto;
       margin-right: auto;
     }
@@ -167,9 +175,35 @@
       object-fit: cover;
     }
 
+    .narrow-figure img {
+      width: min(100%, 400px);
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin: 1.2rem 0;
+    }
+
+    .comparison-grid img {
+      width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      object-fit: cover;
+    }
+
+    .row-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--blue);
+      text-align: left;
+      margin: 0.4rem 0 -0.4rem;
+    }
+
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 0.8rem; }
     th { background: var(--blue); color: var(--white); padding: 0.6rem 1rem; text-align: left; }
-    td { padding: 0.55rem 1rem; border-bottom: 1px solid var(--border); }
+    td { padding: 0.55rem 1rem; border-bottom: 1px solid var(--border); vertical-align: top; }
     tr:nth-child(even) td { background: #f0f3f8; }
 
     .ref-list { list-style: none; padding: 0; }
@@ -202,6 +236,37 @@
     .links-bar a:hover { background: #004a8f; }
     .links-bar a.gold { background: var(--gold); color: var(--blue); }
     .links-bar a.gold:hover { background: #e6a300; }
+    
+    .video-row {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: start;
+    }
+
+    .video-row video {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      aspect-ratio: 16 / 9;
+      height: auto;
+      object-fit: contain;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: #000;
+    } 
+    
+    .video-placeholder {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #e8edf5;
+      border-radius: var(--radius);
+      border: 2px dashed var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
 
     footer {
       text-align: center;
@@ -216,7 +281,7 @@
     footer a:hover { text-decoration: underline; }
 
     @media (max-width: 600px) {
-      .img-row-2, .img-row-3 { grid-template-columns: 1fr; }
+      .img-row-2, .img-row-3, .comparison-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -225,7 +290,7 @@
 <header>
   <span class="course-tag">CS284A · Spring 2026 · UC Berkeley</span>
   <h1>Fifty Shades of Cel</h1>
-  <p class="subtitle">Final Report</p>
+  <p class="subtitle">Real-Time 2D/3D Hybrid Cel Shading</p>
   <div class="team-grid">
     <span class="member">Kevin Frans</span>
     <span class="member">·</span>
@@ -236,20 +301,22 @@
     <span class="member">Tao Sun</span>
   </div>
   <div class="links-bar" style="justify-content:center; margin-top:1.4rem;">
-    <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">GitHub Repository</a>
+    <a href="https://youtu.be/l5_3bTn08Mw" target="_blank" rel="noopener">Final Video</a>
+    <a href="index.html">Proposal</a>
     <a href="index.html">Proposal</a>
     <a href="milestone.html">Milestone</a>
-    <!-- TODO: add final video / slides links -->
-    <!-- <a href="https://youtu.be/..." target="_blank" rel="noopener">Video</a> -->
-    <!-- <a href="https://docs.google.com/..." target="_blank" rel="noopener">Slides</a> -->
+
   </div>
 </header>
 
 <nav>
   <ul>
     <li><a href="#abstract">Abstract</a></li>
+    <li><a href="#introduction">Introduction</a></li>
     <li><a href="#approach">Technical Approach</a></li>
     <li><a href="#results">Results</a></li>
+    <li><a href="#discussion">Discussion</a></li>
     <li><a href="#contributions">Contributions</a></li>
     <li><a href="#references">References</a></li>
   </ul>
@@ -257,44 +324,362 @@
 
 <main>
 
-  <!-- Abstract -->
   <section id="abstract">
     <h2>Abstract</h2>
     <div class="card">
       <p>
-        TODO
+        <em>Fifty Shades of Cel</em> is a real-time non-photorealistic rendering system for
+        2D/3D hybrid cel shading. Built on top of the HW4 cloth simulator's OpenGL framework,
+        the system combines quantized toon shading, screen-space edge detection, shadow mapping,
+        runtime OBJ mesh loading, split-screen baseline comparison, and interactive GUI controls.
+        The renderer supports both deformable cloth and imported rigid meshes, allowing cel-shaded
+        results to be tested on dynamic scenes with multiple light types, material colors, shadows,
+        and outlines. The final system is designed not only as a shader effect, but as an
+        interactive stylized rendering pipeline for producing and comparing different cel-shaded
+        looks.
       </p>
     </div>
   </section>
 
-  <!-- Technical Approach -->
-  <section id="approach">
-
+  <section id="introduction">
+    <h2>Introduction</h2>
+    <p>
+      Cel shading, or toon shading, belongs to the broader area of non-photorealistic rendering,
+      where rendering algorithms intentionally emphasize stylization, shape readability, and
+      illustration-like abstraction rather than physical realism. This style is widely used in games
+      and animation because it combines the geometric flexibility of 3D rendering with visual
+      features associated with 2D art, including discrete shading regions, strong silhouettes,
+      simplified material appearance, and stylized shadows.
+    </p>
+    <p>
+      This project presents <em>Fifty Shades of Cel</em>, a real-time 2D/3D hybrid cel-shading
+      system built on top of the HW4 cloth simulator's OpenGL framework. The goal is to turn a
+      physically simulated or mesh-based 3D scene into a stylized rendering that supports toon-like
+      lighting, texture-based shadow detail, screen-space outlines, shadows, imported meshes, and
+      interactive visual control.
+    </p>
+    <p>
+      The final system consists of a multi-pass rendering pipeline. The scene is first rendered
+      with a cel shader that computes quantized lighting bands, pattern-based dark regions,
+      highlights, shadows, and material-aware base colors. The renderer then applies a fullscreen
+      edge-detection pass using depth and normal buffers to produce outlines and internal feature
+      lines. The system also supports shadow mapping, runtime OBJ mesh loading, GUI-controlled
+      presets, and split-screen comparison against a Phong baseline.
+    </p>
   </section>
 
-  <!-- Results -->
+  <section id="approach">
+    <h2>Technical Approach</h2>
+
+    <p>
+      The system is organized around six main components: the render loop and framebuffer pipeline,
+      the cel shader, shadow mapping, fullscreen edge detection, mesh loading, and comparison/user
+      controls.
+    </p>
+
+    <h3>Render Pipeline</h3>
+    <p>
+      The renderer is driven by the simulator's per-frame draw loop. Each frame updates the cloth
+      simulation when cloth is enabled, updates rotating light parameters when light animation is
+      active, renders a shadow map from the light's point of view, and then renders the visible
+      scene.
+    </p>
+    <p>
+      The main rendering path uses an offscreen framebuffer object (FBO) that stores color, depth,
+      and packed world-space normal buffers. These auxiliary buffers are necessary because the final
+      outline pass is performed in screen space rather than through explicit mesh-edge extraction.
+      After the scene is rendered into the offscreen FBO, a fullscreen edge-composite pass reads the
+      stored depth and normal textures and overlays detected edges on top of the cel-shaded image.
+    </p>
+    <p>
+      The system also includes a comparison path. In compare mode, the scene is rendered twice:
+      once with the cel-shading pipeline and once with a Phong baseline shader. The two results are
+      passed to a fullscreen comparison compositor, which can display them using either a movable
+      wipe boundary or a side-by-side layout.
+    </p>
+
+    <h3>Cel Shader</h3>
+    <p>
+      The cel shader produces the main stylized appearance. The vertex shader computes world-space
+      position, object-space position, world-space normal, and per-vertex diffuse color. The fragment
+      shader begins with a base color, which can be overridden by diffuse material colors loaded from
+      an MTL file. This allows imported meshes to retain part-specific colors while still receiving
+      the same toon-shading treatment.
+    </p>
+    <p>
+      Lighting is computed using either a directional light or a point light. The shader evaluates
+      <em>N · L</em> from the surface normal and light direction, remaps this value using a dark
+      threshold, and quantizes it into discrete bands using <code>floor()</code>. A low band count
+      produces a classic two-tone cel-shaded look, while higher band counts introduce more discrete
+      gradation without reverting to smooth Phong shading.
+    </p>
+    <p>
+      The shader combines several stylization terms. Dark regions blend the base color toward a
+      configurable dark color. Shadowed regions from the shadow map are also blended toward the dark
+      color, so a surface can become dark either because it lies in an unlit cel band or because it
+      is occluded from the light. For imported meshes using MTL material colors, a pattern texture is
+      sampled using a flat object-space XY projection and restricted to dark or shadow transition
+      regions. Finally, a highlight band is added above a configurable bright threshold. The shader
+      writes both the final cel-shaded color and a packed normal buffer for the later edge pass.
+    </p>
+
+    <h3>Shadow Mapping</h3>
+    <p>
+      The system uses shadow mapping to add spatial structure to the cel-shaded render. Before the
+      main scene pass, the geometry is rendered from the light's point of view into a depth-only
+      shadow framebuffer. During cel shading, each fragment is projected into the light's clip space
+      and compared against the stored shadow depth to determine whether it is shadowed.
+    </p>
+    <p>
+      Both directional and point lights are supported. Directional lights use an orthographic
+      projection, while point lights use a perspective projection from the light position toward the
+      scene. The implementation uses a slope-scaled bias and a small percentage-closer filtering
+      kernel to reduce self-shadowing artifacts and soften shadow boundaries. The resulting shadow
+      value is integrated into the cel-shading calculation rather than treated as a separate
+      photorealistic effect, so shadows remain visually consistent with the stylized pipeline.
+    </p>
+
+    <h3>Fullscreen Edge Detection</h3>
+    <p>
+      The outline stage is implemented as a fullscreen post-processing pass. Instead of extracting
+      mesh edges directly, the shader samples neighboring pixels in the depth and normal buffers.
+      Depth discontinuities detect silhouettes, object-background boundaries, and overlaps between
+      objects. Normal discontinuities detect internal feature lines such as cloth folds, creases,
+      and sharp changes in surface orientation.
+    </p>
+    <p>
+      The edge detector separates depth and normal parameters so that silhouette thickness and
+      internal line sensitivity can be tuned independently. Normal-based edges are down-weighted
+      relative to depth-based edges to reduce noisy interior lines on curved surfaces. A small
+      neighborhood filter suppresses isolated single-pixel artifacts. The final edge mask is then
+      composited over the cel-shaded color buffer using a configurable edge color and strength.
+    </p>
+
+    <h3>OBJ Mesh Loading and Scene Support</h3>
+    <p>
+      To support more complex final scenes, the system includes an OBJ mesh loader. Scene JSON files
+      can specify a single mesh or an array of meshes, and the GUI can also load OBJ files at
+      runtime. The loader parses vertex positions, normals, UV coordinates, faces, material
+      libraries, and material assignments. Polygon faces are triangulated, scale and translation are
+      applied during parsing, and normals are adjusted for non-uniform scaling.
+    </p>
+    <p>
+      MTL diffuse colors are loaded and stored as per-vertex colors. The cel shader can then use
+      these material colors as the base color, allowing different parts of an imported model to keep
+      distinct colors while still sharing the same lighting, shadow, and outline pipeline. In
+      addition to imported meshes, the system supports deformable cloth, spheres, planes, and cubes
+      constructed from planar faces.
+    </p>
+
+    <h3>Interactive Controls and Split Comparison</h3>
+    <p>
+      The system exposes most visual parameters through the Appearance panel. The Cel Shader controls
+      include color palette, dark and bright thresholds, shadow and highlight strength, band count,
+      pattern texture scale, light type, light position or direction, preset saving/loading, and HLSL
+      export. The Edge controls include edge enable/disable, depth and normal thickness, thresholds,
+      strength, and color. The Mesh controls support runtime OBJ loading, scaling, translation,
+      friction, collision toggling, and deletion of runtime-loaded meshes. The Compare controls
+      enable split-screen visualization against the Phong baseline.
+    </p>
+
+    <h3>Problems Encountered</h3>
+    <p>
+      One challenge was that the final appearance depended on several rendering components working together 
+      rather than on a single shader. Cel shading, shadow mapping, edge detection, mesh loading, and comparison 
+      rendering all had to be integrated into the same frame loop, so changes in one part of the pipeline could 
+      affect the behavior of another. For example, lighting and shadow parameters influenced the strength of the toon bands, 
+      while the depth and normal buffers produced by the first pass directly affected the quality of the screen-space outlines. 
+      Another challenge was parameter tuning across different scene types: values that worked well for simple spheres did not 
+      always work well for folded cloth or imported OBJ meshes, so edge thresholds, shadow strength, band count, pattern scale, 
+      and color choices often needed scene-specific adjustment.
+    </p>
+
+    <h3>Lessons Learned</h3>
+    <p>
+      The project showed that stylized rendering depends heavily on pipeline organization and visual iteration. Separating the cel 
+      shader from the edge-detection pass made the system easier to reason about, because lighting, shadows, material colors, 
+      silhouettes, and internal feature lines could be adjusted more independently. We also learned that interactive controls 
+      are especially important for non-photorealistic rendering: unlike physically based rendering, cel shading depends on 
+      subjective visual choices such as band count, outline strength, shadow treatment, and color palette. Exposing these 
+      parameters through the GUI made it easier to explore different looks and adapt the same pipeline across multiple 
+      geometry and lighting conditions.
+    </p>
+  </section>
+
   <section id="results">
     <h2>Results</h2>
 
-    <p>TODO</p>
+    <p>
+      The final system produces cel-shaded renderings across several scene configurations, including
+      primitive geometry, deformable cloth, imported OBJ meshes, shadowed scenes, and animated
+      comparison demos. Since this project focuses on visual stylization rather than a predictive
+      task, the evaluation is primarily qualitative: we organize our results around baseline
+      comparison, component ablations, style exploration, and complex-scene coverage.
+    </p>
 
+    <h3>Baseline Comparison</h3>
+    <p>
+      The primary visual baseline is the same scene rendered with a Phong-style shader. The examples
+      below compare the baseline and final output across three scenes using the complete cel-shading
+      pipeline, including quantized lighting, shadow-aware darkening, pattern textures, and
+      screen-space edge detection.
+    </p>
+    <figure>
+      <div class="row-label">Phong-style baseline</div>
+      <div class="comparison-grid">
+        <img src="284_Final/figures/sphere2.JPG" alt="Phong-style baseline sphere scene" />
+        <img src="284_Final/figures/world_2.png" alt="Phong-style baseline tree-world scene" />
+        <img src="284_Final/figures/wagon2.JPG" alt="Phong-style baseline wagon scene" />
+      </div>
+      <div class="row-label">Cel-shaded output</div>
+      <div class="comparison-grid">
+        <img src="284_Final/figures/sphere1.JPG" alt="Cel-shaded sphere scene" />
+        <img src="284_Final/figures/world1.JPG" alt="Cel-shaded tree-world scene" />
+        <img src="284_Final/figures/wagon1.JPG" alt="Cel-shaded wagon scene" />
+      </div>
+      <figcaption>
+        <strong>Figure 1: Baseline comparison across three scenes.</strong> Smooth lighting is
+        replaced with discrete bands, stylized shadows, material-aware color treatment, and
+        screen-space outlines.
+      </figcaption>
+    </figure>
+    <p>
+      Compared with the Phong baseline, the cel-shaded outputs appear flatter and more graphic. The
+      screen-space outlines improve shape readability, while banded lighting and shadow treatment
+      push the result toward a 2D illustration style.
+    </p>
 
-    <!-- Final video -->
-    <h3>Video</h3>
-    <p>TODO:</p>
-    <!--
+    <h3>Component Ablations</h3>
+    <figure>
+      <div class="img-row img-row-2">
+        <img src="284_Final/figures/edge_off_cube.JPG" alt="Cel shading only, edge pass disabled" />
+        <img src="284_Final/figures/edge_on_cube.JPG" alt="Full pipeline with edge detection enabled" />
+      </div>
+      <figcaption>
+        <strong>Figure 2: Edge detection ablation.</strong> Left: cel shading only. Right: full
+        pipeline with screen-space edge detection. The edge pass adds silhouette outlines and
+        internal fold lines.
+      </figcaption>
+    </figure>
+
+    <figure>
+      <div class="img-row img-row-3">
+        <img src="284_Final/figures/sphere_b1.png" alt="Sphere with 1 discrete lighting band" />
+        <img src="284_Final/figures/sphere_b2.png" alt="Sphere with 2 discrete lighting bands" />
+        <img src="284_Final/figures/sphere_b4.png" alt="Sphere with 4 discrete lighting bands" />
+      </div>
+      <figcaption>
+        <strong>Figure 3: Effect of varying discrete lighting bands.</strong> From left to right:
+        1, 2, and 4 bands. Higher band counts add gradation while preserving the toon-like
+        appearance.
+      </figcaption>
+    </figure>
+
+    <h3>Style Parameters and Presets</h3>
+    <p>
+      Beyond binary ablations, the renderer can be tuned as an artistic system through GUI
+      parameters. Pattern scale controls the density of texture detail in darker regions, while the
+      color palette changes the base, dark, bright, and edge colors without modifying the underlying
+      shader implementation.
+    </p>
+    <figure>
+      <div class="img-row img-row-3">
+        <img src="284_Final/figures/pattern_scale_1.png" alt="Low pattern scale" />
+        <img src="284_Final/figures/pattern_scale_2.png" alt="Medium pattern scale" />
+        <img src="284_Final/figures/pattern_scale_4.png" alt="High pattern scale" />
+      </div>
+      <div class="img-row img-row-2">
+        <img src="284_Final/figures/color_1.png" alt="First color palette variation" />
+        <img src="284_Final/figures/color_2.png" alt="Second color palette variation" />
+      </div>
+      <figcaption>
+        <strong>Figure 4: Style parameter variation.</strong> Top row: increasing pattern scale
+        produces denser texture detail in shadow regions. Bottom row: changing the color palette
+        modifies the overall visual mood without changing the renderer.
+      </figcaption>
+    </figure>
+
+    <h3>Lighting, Shadows, and Complex Scenes</h3>
+    <p>
+      Shadow mapping and animated lights add spatial structure to the stylized output. Unlike a
+      photorealistic shadow, the shadow value is folded into the toon-shading model by darkening
+      occluded regions toward the stylized dark color, preserving visual consistency with the
+      cel-shaded pipeline. The rotating-light demo confirms that lighting is not baked: the
+      quantized bands and shadows update dynamically as the light moves.
+    </p>
+
+    <figure class="narrow-figure">
+      <img src="284_Final/figures/shadow.png" alt="Cel-shaded wagon scene demonstrating shadow mapping" />
+      <figcaption>
+        <strong>Figure 5: Shadow mapping result.</strong> Occluded regions are blended toward the
+        stylized dark color while preserving the cel-shaded appearance.
+      </figcaption>
+    </figure>
+
+    <figure>
+    <div class="img-row video-row">
+      <video src="284_Final/figures/rotate_tree_light.mov" controls muted loop playsinline preload="metadata">
+        Your browser does not support the video tag.
+      </video>
+      <video src="284_Final/figures/rotate_tree_world.mov" controls muted loop playsinline preload="metadata">
+        Your browser does not support the video tag.
+      </video>
+      <video src="284_Final/figures/moving_wagon.mov" controls muted loop playsinline preload="metadata">
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <figcaption>
+      <strong>Figure 6: Complex scene demos.</strong> The videos show rotating-light behavior
+      and a moving wagon scene, demonstrating that quantized lighting, shadows, outlines, and
+      imported OBJ/MTL material colors update dynamically.
+    </figcaption>
+  </figure>
+
+    <h3>Scene Coverage and Runtime</h3>
+    <p>
+      The renderer is tested on primitive scenes, deformable cloth, imported OBJ meshes, overlapping
+      objects, and animated scenes. This coverage matters because cel shading and screen-space
+      outlines can behave differently on simple curved primitives, folded cloth, and complex
+      silhouettes from imported meshes. The results show that the same pipeline applies across these
+      scene types, although parameters such as edge threshold, shadow bias, and pattern scale may
+      still require per-scene tuning. The system remains interactive in all tested demos, including
+      the full pipeline with shadow mapping, edge detection, and split-screen comparison running
+      simultaneously.
+    </p>
+
+    <h3>Final Video</h3>
     <div style="position:relative; width:100%; aspect-ratio:16/9;">
-      <iframe src="https://www.youtube.com/embed/VIDEO_ID"
+      <iframe src="https://www.youtube.com/embed/l5_3bTn08Mw"
         title="Fifty Shades of Cel – Final Video" frameborder="0"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowfullscreen
         style="position:absolute; top:0; left:0; width:100%; height:100%; border-radius:var(--radius);">
       </iframe>
     </div>
-    -->
   </section>
 
-  <!-- Contributions -->
+  <section id="discussion">
+    <h2>Discussion and Conclusion</h2>
+    <p>
+      The project demonstrates that a relatively compact set of rendering passes can produce a
+      flexible cel-shading system. Separating the cel shader from the edge-detection pass makes each
+      effect independently tunable, and exposing parameters through the GUI allows rapid style
+      exploration without recompiling shaders.
+    </p>
+    <p>
+      The main limitation is that style parameters still require per-scene tuning: edge thresholds,
+      shadow bias, pattern scale, and color palettes may need adjustment when moving between cloth,
+      primitives, and imported meshes. Mesh loading currently supports only diffuse material colors
+      from MTL files, and collision handling is not optimized for large imported models.
+    </p>
+    <p>
+      Future work could address these limitations by supporting richer material maps, adding adaptive
+      parameter defaults based on scene statistics, improving line-weight control and antialiasing,
+      and conducting systematic performance benchmarks across varying triangle counts and scene
+      complexity.
+    </p>
+  </section>
+
   <section id="contributions">
     <h2>Contributions</h2>
     <div class="card">
@@ -303,23 +688,76 @@
           <tr><th>Team Member</th><th>Contributions</th></tr>
         </thead>
         <tbody>
-          <tr><td>Kevin Frans</td><td>TODO</td></tr>
-          <tr><td>Qijun Li</td><td>TODO</td></tr>
-          <tr><td>Shaoyi Wang</td><td>TODO</td></tr>
-          <tr><td>Tao Sun</td><td>TODO</td></tr>
+          <tr>
+            <td>Kevin Frans</td>
+            <td>Rendering extensions and final demo scenes, including shadow support, lighting animation, overlapping-object examples, and complex scene setups.</td>
+          </tr>
+          <tr>
+            <td>Qijun Li</td>
+            <td>Final report and project webpage content, including technical writing, result organization, and paper structuring and formatting.</td>
+          </tr>
+          <tr>
+            <td>Shaoyi Wang</td>
+            <td>Core rendering system, including the cel-shading pipeline, edge-detection pipeline, GUI controls, implementation reference, and user guide.</td>
+          </tr>
+          <tr>
+            <td>Tao Sun</td>
+            <td>Core project implementation and final deliverables, including system integration, webpage setup, demo/video preparation, and final presentation coordination.</td>
+          </tr>
         </tbody>
       </table>
     </div>
   </section>
 
-  <!-- References -->
   <section id="references">
     <h2>References</h2>
     <ul class="ref-list">
       <li>
-        Wikipedia contributors.
-        <a href="https://en.wikipedia.org/wiki/Cel_shading" target="_blank" rel="noopener">
-          <em>Cel shading</em></a>. Wikipedia.
+        Gooch, A., Gooch, B., Shirley, P., and Cohen, E.
+        <a href="https://doi.org/10.1145/280814.280950" target="_blank" rel="noopener">
+          <em>A Non-Photorealistic Lighting Model for Automatic Technical Illustration</em></a>.
+        Proceedings of SIGGRAPH 1998, pp. 447–452, 1998.
+      </li>
+      <li>
+        Lake, A., Marshall, C., Harris, M., and Blackstein, M.
+        <a href="https://doi.org/10.1145/340916.340918" target="_blank" rel="noopener">
+          <em>Stylized Rendering Techniques for Scalable Real-Time 3D Animation</em></a>.
+        Proceedings of the First International Symposium on Non-Photorealistic Animation and Rendering, pp. 13–20, 2000.
+      </li>
+      <li>
+        Phong, B. T.
+        <a href="https://doi.org/10.1145/360825.360839" target="_blank" rel="noopener">
+          <em>Illumination for Computer Generated Pictures</em></a>.
+        Communications of the ACM, 18(6), pp. 311–317, 1975.
+      </li>
+      <li>
+        Williams, L.
+        <a href="https://doi.org/10.1145/800248.807402" target="_blank" rel="noopener">
+          <em>Casting Curved Shadows on Curved Surfaces</em></a>.
+        Computer Graphics, 12(3), pp. 270–274, 1978.
+      </li>
+      <li>
+        Reeves, W. T., Salesin, D. H., and Cook, R. L.
+        <a href="https://doi.org/10.1145/37401.37435" target="_blank" rel="noopener">
+          <em>Rendering Antialiased Shadows with Depth Maps</em></a>.
+        Computer Graphics, 21(4), pp. 283–291, 1987.
+      </li>
+      <li>
+        Saito, T., and Takahashi, T.
+        <a href="https://doi.org/10.1145/97880.97901" target="_blank" rel="noopener">
+          <em>Comprehensible Rendering of 3-D Shapes</em></a>.
+        Computer Graphics, 24(4), pp. 197–206, 1990.
+      </li>
+      <li>
+        DeCarlo, D., Finkelstein, A., Rusinkiewicz, S., and Santella, A.
+        <a href="https://doi.org/10.1145/882262.882354" target="_blank" rel="noopener">
+          <em>Suggestive Contours for Conveying Shape</em></a>.
+        ACM Transactions on Graphics, 22(3), pp. 848–855, 2003.
+      </li>
+      <li>
+        Frans, K., Li, Q., Wang, S., and Sun, T.
+        <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">
+          <em>CS284A_50CelShades Project Repository</em></a>.
       </li>
     </ul>
   </section>
@@ -331,7 +769,7 @@
     CS284A Final Project · Spring 2026 ·
     <a href="https://cs184.eecs.berkeley.edu" target="_blank" rel="noopener">UC Berkeley</a>
     &nbsp;|&nbsp;
-    <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/LupoSun/CS284A_50CelShades" target="_blank" rel="noopener">GitHub Repository</a>
     &nbsp;|&nbsp;
     <a href="index.html">Proposal</a>
     &nbsp;|&nbsp;
