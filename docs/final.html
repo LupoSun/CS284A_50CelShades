@@ -488,11 +488,13 @@
       One challenge was that the final appearance depended on several rendering components working together 
       rather than on a single shader. Cel shading, shadow mapping, edge detection, mesh loading, and comparison 
       rendering all had to be integrated into the same frame loop, so changes in one part of the pipeline could 
-      affect the behavior of another. For example, lighting and shadow parameters influenced the strength of the toon bands, 
-      while the depth and normal buffers produced by the first pass directly affected the quality of the screen-space outlines. 
-      Another challenge was parameter tuning across different scene types: values that worked well for simple spheres did not 
-      always work well for folded cloth or imported OBJ meshes, so edge thresholds, shadow strength, band count, pattern scale, 
-      and color choices often needed scene-specific adjustment.
+      affect the behavior of another. For example, lighting and shadow parameters influenced the strength of the 
+      toon bands, while the depth and normal buffers produced by the first pass directly affected the quality of 
+      the screen-space outlines. Another challenge was managing the many adjustable parameters in the pipeline. 
+      Instead of exposing all of them in the UI, we had to decide which parameters were useful for artistic 
+      control and which should remain fixed in the code for rendering quality or stability. As a result, 
+      parameters such as shadow strength, band count, pattern scale, and color choices were placed in the UI, 
+      while more technical settings were handled directly in the implementation.
     </p>
 
     <h3>Lessons Learned</h3>
